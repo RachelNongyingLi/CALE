@@ -51,13 +51,61 @@ def load_dataset(path: str | None) -> list[dict[str, Any]]:
     if file_path.suffix == ".csv":
         return load_falseqa_csv(file_path)
     if file_path.suffix == ".jsonl":
-        return [json.loads(line) for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [json.loads(line) for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        return normalize_jsonl_rows(rows)
     data = json.loads(file_path.read_text(encoding="utf-8"))
     if isinstance(data, dict) and "examples" in data:
         return data["examples"]
     if isinstance(data, list):
         return data
     raise ValueError("Dataset must be a JSON list, a JSON object with `examples`, or JSONL.")
+
+
+def normalize_jsonl_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+    first = rows[0]
+    if {"claim", "label", "evidence"}.issubset(first):
+        return [normalize_fever_row(row) for row in rows]
+    return rows
+
+
+def normalize_fever_row(row: dict[str, Any]) -> dict[str, Any]:
+    label = row["label"]
+    claim = row["claim"].strip()
+    evidence = row.get("evidence", [])
+    evidence_text = extract_available_evidence_text(evidence)
+    supporting_evidence = evidence_text or json.dumps(evidence, ensure_ascii=False)
+    return {
+        "id": str(row.get("id", "")),
+        "dataset": "FEVER",
+        "claim": claim,
+        "user_prompt": claim,
+        "candidate_response": row.get("candidate_response", ""),
+        "false_premise": claim if label == "REFUTES" else "",
+        "reference_label": label,
+        "reference_fact": f"The gold factual status of the claim is {label}.",
+        "supporting_evidence": supporting_evidence,
+        "raw_evidence": evidence,
+    }
+
+
+def extract_available_evidence_text(evidence: Any) -> str:
+    """Extract text if a FEVER-like row has already been enriched with text.
+
+    Official FEVER evidence contains page/sentence ids, not sentence text. Some
+    processed variants add text fields; this helper uses them when available.
+    """
+    texts: list[str] = []
+    if isinstance(evidence, list):
+        for evidence_set in evidence:
+            if isinstance(evidence_set, list):
+                for item in evidence_set:
+                    if isinstance(item, dict):
+                        text = item.get("text") or item.get("sentence") or item.get("evidence_text")
+                        if text:
+                            texts.append(str(text))
+    return " ".join(texts)
 
 
 def load_falseqa_csv(file_path: Path) -> list[dict[str, Any]]:

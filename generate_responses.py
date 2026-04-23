@@ -22,6 +22,19 @@ from experiment import load_dataset
 
 
 def build_generation_prompt(item: dict[str, Any]) -> str:
+    if "reference_label" in item:
+        claim = item["user_prompt"]
+        evidence = item.get("supporting_evidence", "")
+        return (
+            "Assess the factual status of the following claim. "
+            "If the claim is false, reject it and provide a correction when possible. "
+            "If there is not enough information, say that the evidence is insufficient. "
+            "Ground your answer in the provided evidence when evidence is available.\n\n"
+            f"Claim: {claim}\n\n"
+            f"Evidence: {evidence}\n\n"
+            "Answer:"
+        )
+
     question = item["user_prompt"]
     return (
         "Answer the user's question. If the question contains a false premise, "
@@ -86,6 +99,21 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
     """Cheap local mode for verifying the file pipeline without loading a model."""
     responses = []
     for item in items:
+        if "reference_label" in item:
+            label = item["reference_label"]
+            claim = item["user_prompt"]
+            if label == "SUPPORTS":
+                responses.append(f"The claim is supported by the evidence: {claim}")
+            elif label == "REFUTES":
+                responses.append(
+                    "The claim is false or refuted by the evidence. "
+                    f"The statement should not be accepted as written: {claim}"
+                )
+            else:
+                responses.append(
+                    "There is not enough information in the provided evidence to verify the claim."
+                )
+            continue
         reference = item.get("reference_fact", "")
         if item.get("source_label") == 1 or item.get("false_premise"):
             responses.append(
