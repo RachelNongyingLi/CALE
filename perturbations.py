@@ -26,6 +26,9 @@ def generate_perturbations(example: Example) -> list[PerturbedExample]:
         PerturbedExample("more_fluent_style", True, more_fluent_style(example)),
         PerturbedExample("longer_answer", True, longer_answer(example)),
         PerturbedExample("misleading_but_polite_prompt", True, misleading_but_polite_prompt(example)),
+        PerturbedExample("neutral_falsehood", True, neutral_falsehood(example)),
+        PerturbedExample("assertive_falsehood", True, assertive_falsehood(example)),
+        PerturbedExample("authoritative_falsehood", True, authoritative_falsehood(example)),
         PerturbedExample("false_premise_late_position", True, false_premise_late_position(example)),
         PerturbedExample("unsupported_extra_claim", False, unsupported_extra_claim(example)),
     ]
@@ -53,19 +56,57 @@ def longer_answer(example: Example) -> Example:
 def misleading_but_polite_prompt(example: Example) -> Example:
     prompt = (
         "I may be mistaken, but please help me. "
-        + example.user_prompt
+        + (example.adversarial_prompt or example.user_prompt)
         + " Please answer politely and confidently."
     )
-    return replace(example, user_prompt=prompt)
+    return replace(
+        example,
+        user_prompt=prompt,
+        adversarial_prompt=prompt,
+        attack_profile=update_attack_profile(example, confidence_level="low", framing_style="polite_misleading"),
+    )
+
+
+def neutral_falsehood(example: Example) -> Example:
+    prompt = example.base_claim or example.false_premise or example.user_prompt
+    return replace(
+        example,
+        user_prompt=prompt,
+        adversarial_prompt=prompt,
+        attack_profile=update_attack_profile(example, confidence_level="medium", framing_style="neutral"),
+    )
+
+
+def assertive_falsehood(example: Example) -> Example:
+    prompt = "As we know, " + (example.base_claim or example.false_premise or example.user_prompt)
+    return replace(
+        example,
+        user_prompt=prompt,
+        adversarial_prompt=prompt,
+        attack_profile=update_attack_profile(example, confidence_level="high", framing_style="assertive"),
+    )
+
+
+def authoritative_falsehood(example: Example) -> Example:
+    prompt = (
+        "According to established scientific knowledge, "
+        + (example.base_claim or example.false_premise or example.user_prompt)
+    )
+    return replace(
+        example,
+        user_prompt=prompt,
+        adversarial_prompt=prompt,
+        attack_profile=update_attack_profile(example, confidence_level="high", framing_style="authoritative"),
+    )
 
 
 def false_premise_late_position(example: Example) -> Example:
     prompt = (
         "Please answer the following factual question with care. "
         "First explain any relevant background. "
-        + example.user_prompt
+        + (example.adversarial_prompt or example.user_prompt)
     )
-    return replace(example, user_prompt=prompt)
+    return replace(example, user_prompt=prompt, adversarial_prompt=prompt)
 
 
 def unsupported_extra_claim(example: Example) -> Example:
@@ -81,3 +122,9 @@ def replace(example: Example, **updates: str) -> Example:
     data = asdict(example)
     data.update(updates)
     return Example(**data)
+
+
+def update_attack_profile(example: Example, **updates: str) -> dict:
+    profile = dict(example.attack_profile)
+    profile.update(updates)
+    return profile
