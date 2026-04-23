@@ -180,7 +180,13 @@ def resolve_evidence_texts(
             if len(item) < 4:
                 continue
             page = str(item[2])
-            sent_id = int(item[3])
+            raw_sent_id = item[3]
+            if raw_sent_id is None:
+                continue
+            try:
+                sent_id = int(raw_sent_id)
+            except (TypeError, ValueError):
+                continue
             key = (page, sent_id)
             if key in seen:
                 continue
