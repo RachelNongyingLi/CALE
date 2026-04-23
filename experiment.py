@@ -37,7 +37,7 @@ from cale_demo import (
     score_to_label,
     to_jsonable,
 )
-from llm_judge import DirectHeuristicJudge, make_structured_judge
+from llm_judge import DirectHeuristicJudge, make_direct_judge, make_structured_judge
 from perturbations import generate_perturbations
 
 
@@ -148,19 +148,39 @@ def built_in_dataset() -> list[dict[str, Any]]:
     return [positive, negative, partial]
 
 
-def run_baseline(item: dict[str, Any], mode: str) -> dict[str, Any]:
+def run_baseline(
+    item: dict[str, Any],
+    mode: str,
+    judge_kind: str = "heuristic",
+    model: str | None = None,
+    variant_name: str | None = None,
+) -> dict[str, Any]:
     schema = build_adversarial_factuality_schema()
     example = item_to_example(item)
-    run = DirectHeuristicJudge(mode=mode).evaluate(example, schema, run_id=1)
+    if mode == "llm_judge":
+        run = make_direct_judge(judge_kind, model).evaluate(example, schema, run_id=1)
+    else:
+        run = DirectHeuristicJudge(mode=mode).evaluate(example, schema, run_id=1)
     return {
         "id": item.get("id", ""),
-        "variant": f"baseline_{mode}",
+        "variant": variant_name or f"baseline_{mode}",
         "label": run.label,
         "score": round(run.calibrated_score, 3),
         "uncertainty": 0.0,
         "subscores": {},
         "raw": run_to_json(run),
     }
+
+
+def run_variant(item: dict[str, Any], variant: str, judge_kind: str, model: str | None, repeats: int) -> dict[str, Any]:
+    if variant.startswith("baseline_"):
+        return run_baseline(item, variant.replace("baseline_", "", 1), judge_kind, model, variant)
+    if variant.startswith("direct_") and variant.endswith("_heuristic"):
+        mode = variant.removeprefix("direct_").removesuffix("_heuristic")
+        return run_baseline(item, mode, "heuristic", model, variant)
+    if variant == "direct_llm_judge":
+        return run_baseline(item, "llm_judge", judge_kind, model, variant)
+    return run_cale_variant(item, variant, judge_kind, model, repeats)
 
 
 def run_cale_variant(
@@ -298,25 +318,67 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
     return metrics
 
 
-def run_stress_tests(item: dict[str, Any], repeats: int) -> list[dict[str, Any]]:
+def run_stress_tests(
+    item: dict[str, Any],
+    variants: list[str],
+    judge_kind: str,
+    model: str | None,
+    repeats: int,
+) -> list[dict[str, Any]]:
     results = []
-    original_output = run_cale(item_to_example(item), repeats=repeats)
+    original_by_variant = {
+        variant: run_variant(item, variant, judge_kind, model, repeats) for variant in variants
+    }
     for perturbed in generate_perturbations(item_to_example(item)):
-        output = run_cale(perturbed.example, repeats=repeats)
-        results.append(
-            {
-                "id": item.get("id", ""),
-                "perturbation": perturbed.perturbation,
-                "expected_invariance": perturbed.expected_invariance,
-                "original_label": original_output.final_label,
-                "perturbed_label": output.final_label,
-                "original_score": original_output.final_score,
-                "perturbed_score": output.final_score,
-                "score_shift": round(output.final_score - original_output.final_score, 3),
-                "label_changed": output.final_label != original_output.final_label,
-            }
-        )
+        perturbed_item = dict(item)
+        perturbed_item.update(asdict(perturbed.example))
+        for variant in variants:
+            original = original_by_variant[variant]
+            perturbed_result = run_variant(perturbed_item, variant, judge_kind, model, repeats)
+            results.append(
+                {
+                    "id": item.get("id", ""),
+                    "variant": variant,
+                    "perturbation": perturbed.perturbation,
+                    "expected_invariance": perturbed.expected_invariance,
+                    "original_label": original["label"],
+                    "perturbed_label": perturbed_result["label"],
+                    "original_score": original["score"],
+                    "perturbed_score": perturbed_result["score"],
+                    "score_shift": round(perturbed_result["score"] - original["score"], 3),
+                    "label_changed": perturbed_result["label"] != original["label"],
+                }
+            )
     return results
+
+
+def compute_stress_summary(stress_results: list[dict[str, Any]]) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for result in stress_results:
+        grouped.setdefault(result["variant"], []).append(result)
+
+    summary: dict[str, Any] = {}
+    for variant, rows in grouped.items():
+        invariant_rows = [row for row in rows if row["expected_invariance"]]
+        sensitivity_rows = [row for row in rows if not row["expected_invariance"]]
+        summary[variant] = {
+            "invariance_label_change_rate": round(
+                mean_bool(row["label_changed"] for row in invariant_rows), 3
+            )
+            if invariant_rows
+            else None,
+            "mean_abs_invariance_score_shift": round(
+                statistics.mean(abs(row["score_shift"]) for row in invariant_rows), 3
+            )
+            if invariant_rows
+            else None,
+            "mean_sensitivity_score_drop": round(
+                statistics.mean(-row["score_shift"] for row in sensitivity_rows), 3
+            )
+            if sensitivity_rows
+            else None,
+        }
+    return summary
 
 
 def accuracy(y_true: list[str], y_pred: list[str]) -> float:
@@ -353,6 +415,13 @@ def checklist_f1(gold: dict[str, int], pred: dict[str, float]) -> float:
     return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
 
+def mean_bool(values: Any) -> float:
+    values_list = list(values)
+    if not values_list:
+        return 0.0
+    return sum(bool(value) for value in values_list) / len(values_list)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CALE experiments.")
     parser.add_argument("--dataset", help="Path to JSON/JSONL dataset.")
@@ -360,30 +429,47 @@ def main() -> None:
     parser.add_argument("--model", help="Model name for an optional API judge.")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--stress", action="store_true", help="Run perturbation stress tests.")
+    parser.add_argument(
+        "--variants",
+        nargs="*",
+        default=[
+            "baseline_binary",
+            "baseline_likert",
+            "direct_trustllm_heuristic",
+            "checklist_only",
+            "checklist_evidence",
+            "checklist_evidence_calibrated",
+            "full_cale",
+        ],
+        help="Evaluator variants to run.",
+    )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
     predictions: list[dict[str, Any]] = []
     for item in items:
-        for mode in ("binary", "likert", "trustllm"):
-            predictions.append(run_baseline(item, mode))
-        for variant in (
-            "checklist_only",
-            "checklist_evidence",
-            "checklist_evidence_calibrated",
-            "full_cale",
-        ):
-            predictions.append(run_cale_variant(item, variant, args.judge, args.model, args.repeats))
+        for variant in args.variants:
+            predictions.append(run_variant(item, variant, args.judge, args.model, args.repeats))
 
     report: dict[str, Any] = {
         "metrics": compute_metrics(items, predictions),
         "predictions": predictions,
     }
     if args.stress:
-        report["stress_tests"] = [
-            result for item in items for result in run_stress_tests(item, repeats=args.repeats)
+        stress_tests = [
+            result
+            for item in items
+            for result in run_stress_tests(
+                item,
+                variants=args.variants,
+                judge_kind=args.judge,
+                model=args.model,
+                repeats=args.repeats,
+            )
         ]
+        report["stress_summary"] = compute_stress_summary(stress_tests)
+        report["stress_tests"] = stress_tests
 
     print(json.dumps(report, indent=2 if args.pretty else None, ensure_ascii=False))
 
