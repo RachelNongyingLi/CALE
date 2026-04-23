@@ -176,7 +176,7 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
 
 
 def write_jsonl(items: list[dict[str, Any]], responses: list[str], output_path: str, model_name: str) -> None:
-    with open(output_path, "w", encoding="utf-8") as file:
+    with open(output_path, "a", encoding="utf-8") as file:
         for item, response in zip(items, responses):
             enriched = dict(item)
             enriched["model_name"] = model_name
@@ -188,6 +188,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate model responses for CALE experiments.")
     parser.add_argument("--dataset", required=True, help="Input CSV/JSON/JSONL dataset.")
     parser.add_argument("--model", default="stub", help="HF model name, or `stub` for local smoke test.")
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        help="Optional list of models to run sequentially. If set, overrides --model and writes all outputs into one JSONL.",
+    )
     parser.add_argument("--output", required=True, help="Output JSONL path.")
     parser.add_argument("--limit", type=int, help="Limit number of examples for quick tests.")
     parser.add_argument(
@@ -207,19 +212,26 @@ def main() -> None:
     items = [construct_adversarial_instance(item, framing=args.framing) if "reference_label" in item else item for item in items]
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    if args.model == "stub":
-        responses = generate_with_stub(items)
-    else:
-        responses = generate_with_transformers(
-            items=items,
-            model_name=args.model,
-            max_new_tokens=args.max_new_tokens,
-            temperature=args.temperature,
-            device_map=args.device_map,
-        )
+    Path(args.output).write_text("", encoding="utf-8")
 
-    write_jsonl(items, responses, args.output, args.model)
-    print(f"Wrote {len(items)} generated responses to {args.output}")
+    model_names = args.models if args.models else [args.model]
+    total_written = 0
+    for model_name in model_names:
+        if model_name == "stub":
+            responses = generate_with_stub(items)
+        else:
+            responses = generate_with_transformers(
+                items=items,
+                model_name=model_name,
+                max_new_tokens=args.max_new_tokens,
+                temperature=args.temperature,
+                device_map=args.device_map,
+            )
+        write_jsonl(items, responses, args.output, model_name)
+        total_written += len(items)
+        print(f"Wrote {len(items)} generated responses for {model_name} to {args.output}")
+
+    print(f"Finished writing {total_written} total generated responses to {args.output}")
 
 
 if __name__ == "__main__":

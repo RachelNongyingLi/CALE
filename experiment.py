@@ -250,11 +250,14 @@ def run_baseline(
         run = DirectHeuristicJudge(mode=mode).evaluate(example, schema, run_id=1)
     return {
         "id": item.get("id", ""),
+        "model_name": item.get("model_name", "unknown"),
         "variant": variant_name or f"baseline_{mode}",
         "label": run.label,
         "score": round(run.calibrated_score, 3),
         "uncertainty": 0.0,
         "subscores": {},
+        "reference_label": item.get("reference_label"),
+        "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": run_to_json(run),
     }
 
@@ -341,12 +344,15 @@ def run_cale_variant(
 
     return {
         "id": item.get("id", ""),
+        "model_name": item.get("model_name", "unknown"),
         "variant": canonical_variant,
         "score_variant": variant,
         "label": output.final_label,
         "score": output.final_score,
         "uncertainty": output.uncertainty,
         "subscores": output.dimension_subscores,
+        "reference_label": item.get("reference_label"),
+        "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": to_jsonable(output),
     }
 
@@ -485,6 +491,7 @@ def run_stress_tests(
             results.append(
                 {
                     "id": item.get("id", ""),
+                    "model_name": item.get("model_name", "unknown"),
                     "variant": variant,
                     "perturbation": perturbed.perturbation,
                     "expected_invariance": perturbed.expected_invariance,
