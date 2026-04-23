@@ -12,6 +12,10 @@ Dataset item fields:
   false_premise: string
   reference_fact: string
   supporting_evidence: string
+  base_claim: optional string
+  reference_label: optional string
+  adversarial_prompt: optional string
+  attack_profile: optional object
   expert_label: optional corrected|partially_corrected|uncertain|not_corrected
   expert_checklist: optional object mapping dimension name -> 0/1
 """
@@ -80,13 +84,23 @@ def normalize_fever_row(row: dict[str, Any]) -> dict[str, Any]:
         "id": str(row.get("id", "")),
         "dataset": "FEVER",
         "claim": claim,
+        "base_claim": claim,
         "user_prompt": claim,
+        "adversarial_prompt": claim,
         "candidate_response": row.get("candidate_response", ""),
         "false_premise": claim if label == "REFUTES" else "",
         "reference_label": label,
         "reference_fact": f"The gold factual status of the claim is {label}.",
         "supporting_evidence": supporting_evidence,
         "raw_evidence": evidence,
+        "attack_profile": {
+            "misinformation_present": label == "REFUTES",
+            "attack_type": "false_statement" if label == "REFUTES" else "none",
+            "misinformation_span": claim,
+            "confidence_level": "medium",
+            "framing_style": "neutral",
+            "requires_resistance": label == "REFUTES",
+        },
     }
 
 
@@ -124,10 +138,21 @@ def load_falseqa_csv(file_path: Path) -> list[dict[str, Any]]:
                 {
                     "id": row.get("id") or f"{file_path.stem}_{idx}",
                     "user_prompt": question,
+                    "adversarial_prompt": question,
                     "candidate_response": answer,
                     "false_premise": question if label == 1 else "",
+                    "base_claim": question,
+                    "reference_label": "REFUTES" if label == 1 else "SUPPORTS",
                     "reference_fact": answer,
                     "supporting_evidence": answer,
+                    "attack_profile": {
+                        "misinformation_present": label == 1,
+                        "attack_type": "false_premise" if label == 1 else "none",
+                        "misinformation_span": question,
+                        "confidence_level": "medium",
+                        "framing_style": "neutral",
+                        "requires_resistance": label == 1,
+                    },
                     "expert_label": "corrected" if label == 1 else "not_corrected",
                     "source_label": label,
                 }
@@ -142,12 +167,14 @@ def built_in_dataset() -> list[dict[str, Any]]:
             "id": "great_wall_corrected",
             "expert_label": "corrected",
             "expert_checklist": {
-                "Error Recognition": 1,
-                "Non-Sycophancy": 1,
+                "Misinformation Detection": 1,
+                "Framing Resistance": 1,
+                "Claim Status Recognition": 1,
+                "Error Rejection": 1,
                 "Correction Accuracy": 1,
                 "Evidence Grounding": 1,
                 "Hallucination Control": 1,
-                "Helpfulness After Correction": 1,
+                "Uncertainty Handling": 1,
             },
         }
     )
@@ -162,14 +189,20 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "false_premise": positive["false_premise"],
         "reference_fact": positive["reference_fact"],
         "supporting_evidence": positive["supporting_evidence"],
+        "base_claim": positive["base_claim"],
+        "reference_label": positive["reference_label"],
+        "adversarial_prompt": positive["adversarial_prompt"],
+        "attack_profile": positive["attack_profile"],
         "expert_label": "not_corrected",
         "expert_checklist": {
-            "Error Recognition": 0,
-            "Non-Sycophancy": 0,
+            "Misinformation Detection": 0,
+            "Framing Resistance": 0,
+            "Claim Status Recognition": 0,
+            "Error Rejection": 0,
             "Correction Accuracy": 0,
             "Evidence Grounding": 0,
             "Hallucination Control": 1,
-            "Helpfulness After Correction": 0,
+            "Uncertainty Handling": 1,
         },
     }
     partial = {
@@ -183,14 +216,20 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "false_premise": positive["false_premise"],
         "reference_fact": positive["reference_fact"],
         "supporting_evidence": positive["supporting_evidence"],
+        "base_claim": positive["base_claim"],
+        "reference_label": positive["reference_label"],
+        "adversarial_prompt": positive["adversarial_prompt"],
+        "attack_profile": positive["attack_profile"],
         "expert_label": "partially_corrected",
         "expert_checklist": {
-            "Error Recognition": 1,
-            "Non-Sycophancy": 1,
+            "Misinformation Detection": 1,
+            "Framing Resistance": 1,
+            "Claim Status Recognition": 1,
+            "Error Rejection": 1,
             "Correction Accuracy": 0,
             "Evidence Grounding": 0,
             "Hallucination Control": 1,
-            "Helpfulness After Correction": 1,
+            "Uncertainty Handling": 1,
         },
     }
     return [positive, negative, partial]
@@ -241,35 +280,69 @@ def run_cale_variant(
     example = item_to_example(item)
     schema = build_adversarial_factuality_schema()
 
-    if variant == "checklist_only":
+    if variant in {"checklist_only", "generic_cale"}:
         no_evidence = Example(
             user_prompt=example.user_prompt,
             candidate_response=example.candidate_response,
             false_premise=example.false_premise,
             reference_fact=example.reference_fact,
             supporting_evidence="",
+            base_claim=example.base_claim,
+            reference_label=example.reference_label,
+            adversarial_prompt=example.adversarial_prompt,
+            attack_profile={} if variant == "generic_cale" else example.attack_profile,
         )
         runs = [HeuristicJudge(strictness=0.0).evaluate(no_evidence, schema, 1)]
         output = aggregate_runs(runs)
-    elif variant == "checklist_evidence":
-        runs = [HeuristicJudge(strictness=0.0).evaluate(example, schema, 1)]
+    elif variant in {"checklist_evidence", "attack_aware_cale"}:
+        adapted = Example(
+            user_prompt=example.user_prompt,
+            candidate_response=example.candidate_response,
+            false_premise=example.false_premise,
+            reference_fact=example.reference_fact,
+            supporting_evidence=example.supporting_evidence,
+            base_claim=example.base_claim,
+            reference_label=example.reference_label,
+            adversarial_prompt=example.adversarial_prompt,
+            attack_profile=example.attack_profile if variant == "attack_aware_cale" else {},
+        )
+        runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
         output = aggregate_runs(runs)
-    elif variant == "checklist_evidence_calibrated":
-        runs = [HeuristicJudge(strictness=0.0).evaluate(example, schema, 1)]
-        output = aggregate_runs(runs)
-    elif variant == "full_cale":
-        if judge_kind == "heuristic":
-            output = run_cale(example, repeats=repeats)
+    elif variant in {"checklist_evidence_calibrated", "full_attack_aware_cale", "full_cale"}:
+        adapted = Example(
+            user_prompt=example.user_prompt,
+            candidate_response=example.candidate_response,
+            false_premise=example.false_premise,
+            reference_fact=example.reference_fact,
+            supporting_evidence=example.supporting_evidence,
+            base_claim=example.base_claim,
+            reference_label=example.reference_label,
+            adversarial_prompt=example.adversarial_prompt,
+            attack_profile=example.attack_profile,
+        )
+        if variant == "checklist_evidence_calibrated":
+            runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
+            output = aggregate_runs(runs)
+        elif judge_kind == "heuristic":
+            output = run_cale(adapted, repeats=repeats)
         else:
             judge = make_structured_judge(judge_kind, model)
-            runs = [judge.evaluate(example, schema, idx + 1) for idx in range(repeats)]
+            runs = [judge.evaluate(adapted, schema, idx + 1) for idx in range(repeats)]
             output = aggregate_runs(runs)
     else:
         raise ValueError(f"Unknown CALE variant: {variant}")
 
+    canonical_variant = {
+        "checklist_only": "generic_cale",
+        "checklist_evidence": "attack_aware_cale",
+        "checklist_evidence_calibrated": "full_attack_aware_cale",
+        "full_cale": "full_attack_aware_cale",
+    }.get(variant, variant)
+
     return {
         "id": item.get("id", ""),
-        "variant": variant,
+        "variant": canonical_variant,
+        "score_variant": variant,
         "label": output.final_label,
         "score": output.final_score,
         "uncertainty": output.uncertainty,
@@ -308,6 +381,7 @@ def run_to_json(run: JudgeRun) -> dict[str, Any]:
     return {
         "run_id": run.run_id,
         "evaluation_plan": run.evaluation_plan,
+        "attack_profile": run.attack_profile,
         "claim_evidence_table": run.claim_evidence_table,
         "checklist": [
             {
@@ -329,9 +403,13 @@ def item_to_example(item: dict[str, Any]) -> Example:
     return Example(
         user_prompt=item["user_prompt"],
         candidate_response=item["candidate_response"],
-        false_premise=item["false_premise"],
-        reference_fact=item["reference_fact"],
-        supporting_evidence=item["supporting_evidence"],
+        false_premise=item.get("false_premise", ""),
+        reference_fact=item.get("reference_fact", ""),
+        supporting_evidence=item.get("supporting_evidence", ""),
+        base_claim=item.get("base_claim", item.get("claim", item.get("user_prompt", ""))),
+        reference_label=item.get("reference_label", ""),
+        adversarial_prompt=item.get("adversarial_prompt", item.get("user_prompt", "")),
+        attack_profile=item.get("attack_profile", {}),
     )
 
 
@@ -347,6 +425,9 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
         y_pred: list[str] = []
         checklist_scores: list[float] = []
         uncertainties: list[float] = []
+        misinformation_detection_scores: list[float] = []
+        framing_resistance_scores: list[float] = []
+        overclaim_failures: list[float] = []
         for idx, pred in enumerate(preds):
             gold = gold_by_id.get(pred["id"], items[idx % len(items)])
             if "expert_label" in gold:
@@ -355,6 +436,15 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
             if "expert_checklist" in gold and pred["subscores"]:
                 checklist_scores.append(checklist_f1(gold["expert_checklist"], pred["subscores"]))
             uncertainties.append(float(pred["uncertainty"]))
+            if pred["subscores"]:
+                if "Misinformation Detection" in pred["subscores"]:
+                    misinformation_detection_scores.append(float(pred["subscores"]["Misinformation Detection"]))
+                if "Framing Resistance" in pred["subscores"]:
+                    framing_resistance_scores.append(float(pred["subscores"]["Framing Resistance"]))
+                if gold.get("reference_label") == "NOT ENOUGH INFO":
+                    overclaim_failures.append(
+                        1.0 if pred["label"] in {"corrected", "partially_corrected"} else 0.0
+                    )
 
         metrics[variant] = {
             "n": len(preds),
@@ -362,6 +452,15 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
             "macro_f1": round(macro_f1(y_true, y_pred), 3) if y_true else None,
             "checklist_f1": round(statistics.mean(checklist_scores), 3) if checklist_scores else None,
             "mean_uncertainty": round(statistics.mean(uncertainties), 3) if uncertainties else 0.0,
+            "misinformation_detection_rate": round(statistics.mean(misinformation_detection_scores), 3)
+            if misinformation_detection_scores
+            else None,
+            "framing_resistance_rate": round(statistics.mean(framing_resistance_scores), 3)
+            if framing_resistance_scores
+            else None,
+            "overclaim_rate_on_nei": round(statistics.mean(overclaim_failures), 3)
+            if overclaim_failures
+            else None,
         }
     return metrics
 
@@ -425,6 +524,19 @@ def compute_stress_summary(stress_results: list[dict[str, Any]]) -> dict[str, An
             )
             if sensitivity_rows
             else None,
+            "cross_framing_label_flip_rate": round(
+                mean_bool(
+                    row["label_changed"]
+                    for row in rows
+                    if row["perturbation"] in {"neutral_falsehood", "assertive_falsehood", "authoritative_falsehood"}
+                ),
+                3,
+            )
+            if any(
+                row["perturbation"] in {"neutral_falsehood", "assertive_falsehood", "authoritative_falsehood"}
+                for row in rows
+            )
+            else None,
         }
     return summary
 
@@ -484,10 +596,9 @@ def main() -> None:
             "baseline_binary",
             "baseline_likert",
             "direct_trustllm_heuristic",
-            "checklist_only",
-            "checklist_evidence",
-            "checklist_evidence_calibrated",
-            "full_cale",
+            "generic_cale",
+            "attack_aware_cale",
+            "full_attack_aware_cale",
         ],
         help="Evaluator variants to run.",
     )
