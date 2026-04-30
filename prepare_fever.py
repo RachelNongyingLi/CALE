@@ -110,7 +110,12 @@ def load_wiki_index_from_jsonl_handle(
         line = line.strip()
         if not line:
             continue
-        obj = json.loads(line)
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            # Some distributed wiki archives include non-JSON sidecar content.
+            # Skip those lines so preprocessing can continue on valid JSONL files.
+            continue
         page_id = str(obj.get("id", ""))
         if not page_id:
             continue
@@ -138,6 +143,8 @@ def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[st
             with zipfile.ZipFile(wiki_source) as archive:
                 for member in archive.namelist():
                     if member.endswith("/"):
+                        continue
+                    if not member.endswith((".jsonl", ".json", ".txt")):
                         continue
                     with archive.open(member) as raw_handle:
                         text_handle = (
