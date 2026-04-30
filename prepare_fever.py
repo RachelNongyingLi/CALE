@@ -33,6 +33,25 @@ from typing import Any, Iterable
 VALID_LABELS = {"SUPPORTS", "REFUTES", "NOT ENOUGH INFO"}
 
 
+def status(message: str) -> None:
+    print(f"[prepare_fever] {message}", flush=True)
+
+
+def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:
+    if total <= 0:
+        return False
+    if index == 1 or index == total:
+        return True
+    current_bucket = (index * 100) // total
+    previous_bucket = ((index - 1) * 100) // total
+    return current_bucket // every_percent > previous_bucket // every_percent
+
+
+def format_progress(index: int, total: int) -> str:
+    percent = (index * 100) / total if total else 100.0
+    return f"{index}/{total} ({percent:.1f}%)"
+
+
 def load_fever_rows(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
@@ -136,16 +155,25 @@ def load_wiki_index_from_jsonl_handle(
 def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[str, dict[int, str]]:
     page_to_sentences: dict[str, dict[int, str]] = defaultdict(dict)
     if wiki_source is None or not wiki_source.exists():
+        status("No wiki source provided; proceeding without resolved evidence text.")
         return page_to_sentences
 
     if wiki_source.is_file() and wiki_source.suffix == ".zip":
         try:
             with zipfile.ZipFile(wiki_source) as archive:
-                for member in archive.namelist():
+                members = archive.namelist()
+                total_members = len(members)
+                status(f"Scanning wiki zip with {total_members} archive members.")
+                for idx, member in enumerate(members, start=1):
                     if member.endswith("/"):
                         continue
                     if not member.endswith((".jsonl", ".json", ".txt")):
                         continue
+                    if should_report_progress(idx, total_members):
+                        status(
+                            f"Reading wiki archive members: {format_progress(idx, total_members)} "
+                            f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)}"
+                        )
                     with archive.open(member) as raw_handle:
                         text_handle = (
                             line.decode("utf-8", errors="ignore") for line in raw_handle
@@ -156,11 +184,24 @@ def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[st
                             page_to_sentences=page_to_sentences,
                         )
         except zipfile.BadZipFile:
+            status(f"Wiki source {wiki_source} is not a valid zip file; continuing without wiki evidence.")
             return page_to_sentences
         return page_to_sentences
 
     if wiki_source.is_dir():
-        for path in sorted(wiki_source.rglob("*")):
+        candidate_paths = [
+            path
+            for path in sorted(wiki_source.rglob("*"))
+            if path.is_file() and path.suffix in {".jsonl", ".json", ".txt"}
+        ]
+        total_paths = len(candidate_paths)
+        status(f"Scanning wiki directory with {total_paths} candidate files.")
+        for idx, path in enumerate(candidate_paths, start=1):
+            if should_report_progress(idx, total_paths):
+                status(
+                    f"Reading wiki files: {format_progress(idx, total_paths)} "
+                    f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)}"
+                )
             if not path.is_file():
                 continue
             if path.suffix not in {".jsonl", ".json", ".txt"}:
@@ -253,8 +294,11 @@ def maybe_limit_by_label(rows: list[dict[str, Any]], max_per_label: int | None) 
 def write_jsonl(rows: list[dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
-        for row in rows:
+        total_rows = len(rows)
+        for idx, row in enumerate(rows, start=1):
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            if should_report_progress(idx, total_rows):
+                status(f"Writing output rows: {format_progress(idx, total_rows)}")
 
 
 def main() -> None:
@@ -281,18 +325,31 @@ def main() -> None:
     output_path = Path(args.output)
     wiki_source = Path(args.wiki_source) if args.wiki_source else None
 
+    status(f"Loading FEVER rows from {input_path}")
     rows = load_fever_rows(input_path)
+    status(f"Loaded {len(rows)} raw FEVER rows.")
     if not args.keep_nei:
         rows = [row for row in rows if row["label"] != "NOT ENOUGH INFO"]
+        status(f"Filtered out NOT ENOUGH INFO rows. Remaining rows: {len(rows)}")
     rows = maybe_limit_by_label(rows, args.max_per_label)
+    if args.max_per_label is not None:
+        status(f"Applied max-per-label={args.max_per_label}. Remaining rows: {len(rows)}")
 
     needed_pages = collect_needed_pages(rows)
+    status(f"Collected {len(needed_pages)} needed wiki pages.")
     wiki_index = load_wiki_index(wiki_source, needed_pages)
-    prepared = [normalize_row(row, wiki_index) for row in rows]
+    status(f"Resolved wiki evidence for {len(wiki_index)} pages. Normalizing rows now.")
+    prepared: list[dict[str, Any]] = []
+    total_rows = len(rows)
+    for idx, row in enumerate(rows, start=1):
+        prepared.append(normalize_row(row, wiki_index))
+        if should_report_progress(idx, total_rows):
+            status(f"Normalizing FEVER rows: {format_progress(idx, total_rows)}")
+    status(f"Writing prepared dataset to {output_path}")
     write_jsonl(prepared, output_path)
 
     with_evidence = sum(1 for row in prepared if row["reference_evidence"])
-    print(
+    status(
         f"Wrote {len(prepared)} FEVER resource rows to {output_path} "
         f"({with_evidence} with resolved evidence text)"
     )

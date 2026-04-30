@@ -29,6 +29,25 @@ PROMPT_TEMPLATES = {
 }
 
 
+def status(message: str) -> None:
+    print(f"[generate_responses] {message}", flush=True)
+
+
+def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:
+    if total <= 0:
+        return False
+    if index == 1 or index == total:
+        return True
+    current_bucket = (index * 100) // total
+    previous_bucket = ((index - 1) * 100) // total
+    return current_bucket // every_percent > previous_bucket // every_percent
+
+
+def format_progress(index: int, total: int) -> str:
+    percent = (index * 100) / total if total else 100.0
+    return f"{index}/{total} ({percent:.1f}%)"
+
+
 def build_adversarial_prompt(claim: str, framing: str) -> tuple[str, str, str]:
     if framing not in PROMPT_TEMPLATES:
         raise ValueError(f"Unsupported framing: {framing}")
@@ -110,17 +129,20 @@ def generate_with_transformers(
         ) from exc
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    status(f"Loaded tokenizer for {model_name}.")
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map=device_map,
         trust_remote_code=True,
     )
+    status(f"Loaded model {model_name} with device_map={device_map}.")
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     outputs: list[str] = []
-    for item in items:
+    total_items = len(items)
+    for idx, item in enumerate(items, start=1):
         prompt = build_generation_prompt(item)
         messages = [{"role": "user", "content": prompt}]
         if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
@@ -142,13 +164,16 @@ def generate_with_transformers(
         )
         new_tokens = generation[0][inputs["input_ids"].shape[-1] :]
         outputs.append(tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
+        if should_report_progress(idx, total_items):
+            status(f"Generating responses for {model_name}: {format_progress(idx, total_items)}")
     return outputs
 
 
 def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
     """Cheap local mode for verifying the file pipeline without loading a model."""
     responses = []
-    for item in items:
+    total_items = len(items)
+    for idx, item in enumerate(items, start=1):
         if "reference_label" in item:
             label = item["reference_label"]
             claim = item.get("adversarial_prompt") or item["user_prompt"]
@@ -172,6 +197,8 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
             )
         else:
             responses.append(reference)
+        if should_report_progress(idx, total_items):
+            status(f"Generating stub responses: {format_progress(idx, total_items)}")
     return responses
 
 
@@ -207,16 +234,21 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
+    status(f"Loaded {len(items)} items from {args.dataset}")
     if args.limit:
         items = items[: args.limit]
+        status(f"Applied limit={args.limit}. Running on {len(items)} items.")
     items = [construct_adversarial_instance(item, framing=args.framing) if "reference_label" in item else item for item in items]
+    status(f"Prepared {len(items)} items with framing={args.framing}.")
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text("", encoding="utf-8")
+    status(f"Cleared output file at {args.output}")
 
     model_names = args.models if args.models else [args.model]
     total_written = 0
     for model_name in model_names:
+        status(f"Starting generation for model {model_name}")
         if model_name == "stub":
             responses = generate_with_stub(items)
         else:
@@ -229,9 +261,9 @@ def main() -> None:
             )
         write_jsonl(items, responses, args.output, model_name)
         total_written += len(items)
-        print(f"Wrote {len(items)} generated responses for {model_name} to {args.output}")
+        status(f"Wrote {len(items)} generated responses for {model_name} to {args.output}")
 
-    print(f"Finished writing {total_written} total generated responses to {args.output}")
+    status(f"Finished writing {total_written} total generated responses to {args.output}")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,25 @@ from perturbations import generate_perturbations
 LABELS = ["not_corrected", "uncertain", "partially_corrected", "corrected"]
 
 
+def status(message: str) -> None:
+    print(f"[experiment] {message}", flush=True)
+
+
+def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:
+    if total <= 0:
+        return False
+    if index == 1 or index == total:
+        return True
+    current_bucket = (index * 100) // total
+    previous_bucket = ((index - 1) * 100) // total
+    return current_bucket // every_percent > previous_bucket // every_percent
+
+
+def format_progress(index: int, total: int) -> str:
+    percent = (index * 100) / total if total else 100.0
+    return f"{index}/{total} ({percent:.1f}%)"
+
+
 def load_dataset(path: str | None) -> list[dict[str, Any]]:
     if not path:
         return built_in_dataset()
@@ -613,16 +632,24 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
+    status(f"Loaded {len(items)} items from {args.dataset or 'built-in dataset'}.")
     predictions: list[dict[str, Any]] = []
+    total_predictions = len(items) * len(args.variants)
+    prediction_index = 0
+    status(f"Running {len(args.variants)} evaluator variants over {len(items)} items.")
     for item in items:
         for variant in args.variants:
+            prediction_index += 1
             predictions.append(run_variant(item, variant, args.judge, args.model, args.repeats))
+            if should_report_progress(prediction_index, total_predictions):
+                status(f"Completed evaluator runs: {format_progress(prediction_index, total_predictions)}")
 
     report: dict[str, Any] = {
         "metrics": compute_metrics(items, predictions),
         "predictions": predictions,
     }
     if args.stress:
+        status("Starting perturbation stress tests.")
         stress_tests = [
             result
             for item in items
@@ -634,9 +661,11 @@ def main() -> None:
                 repeats=args.repeats,
             )
         ]
+        status(f"Finished stress tests with {len(stress_tests)} perturbation results.")
         report["stress_summary"] = compute_stress_summary(stress_tests)
         report["stress_tests"] = stress_tests
 
+    status("Finished experiment run. Emitting final JSON report.")
     print(json.dumps(report, indent=2 if args.pretty else None, ensure_ascii=False))
 
 
