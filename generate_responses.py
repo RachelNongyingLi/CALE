@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,7 @@ PROMPT_TEMPLATES = {
 
 
 def status(message: str) -> None:
-    print(f"[generate_responses] {message}", flush=True)
+    print(f"[generate_responses] {message}", flush=True, file=sys.stderr)
 
 
 def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:

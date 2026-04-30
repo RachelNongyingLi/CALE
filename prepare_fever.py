@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import zipfile
 from collections import defaultdict
 from pathlib import Path
@@ -34,7 +35,7 @@ VALID_LABELS = {"SUPPORTS", "REFUTES", "NOT ENOUGH INFO"}
 
 
 def status(message: str) -> None:
-    print(f"[prepare_fever] {message}", flush=True)
+    print(f"[prepare_fever] {message}", flush=True, file=sys.stderr)
 
 
 def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:

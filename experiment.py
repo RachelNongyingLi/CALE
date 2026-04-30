@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import statistics
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,7 @@ LABELS = ["not_corrected", "uncertain", "partially_corrected", "corrected"]
 
 
 def status(message: str) -> None:
-    print(f"[experiment] {message}", flush=True)
+    print(f"[experiment] {message}", flush=True, file=sys.stderr)
 
 
 def should_report_progress(index: int, total: int, every_percent: int = 10) -> bool:
@@ -82,6 +83,20 @@ def load_dataset(path: str | None) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return data
     raise ValueError("Dataset must be a JSON list, a JSON object with `examples`, or JSONL.")
+
+
+def validate_items_for_experiment(items: list[dict[str, Any]]) -> None:
+    if not items:
+        raise ValueError("Dataset is empty.")
+
+    sample = items[0]
+    missing = [field for field in ("user_prompt", "candidate_response") if field not in sample]
+    if missing:
+        raise ValueError(
+            "Dataset is not ready for experiment.py. Missing required field(s): "
+            f"{missing}. Prepared FEVER resources must first be passed through "
+            "`generate_responses.py` to create candidate responses."
+        )
 
 
 def normalize_jsonl_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -632,6 +647,7 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
+    validate_items_for_experiment(items)
     status(f"Loaded {len(items)} items from {args.dataset or 'built-in dataset'}.")
     predictions: list[dict[str, Any]] = []
     total_predictions = len(items) * len(args.variants)
