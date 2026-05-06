@@ -18,7 +18,8 @@ This folder contains the code for running CALE experiments on adversarial factua
 Create the conda environment:
 
 ```bash
-conda env create -f "CALE code/environment.yml"
+cd /thesis/CALE
+conda env create -f environment.yml
 conda activate jupyterenv
 ```
 
@@ -43,7 +44,7 @@ PY
 If raw FEVER is already present under `data/fever/`, prepare the dev split:
 
 ```bash
-python "CALE code/prepare_fever.py" \
+python prepare_fever.py \
   --input "data/fever/shared_task_dev.jsonl" \
   --output "data/fever/prepared/dev_prepared.jsonl" \
   --wiki-source "data/fever/wiki-pages.zip" \
@@ -53,7 +54,7 @@ python "CALE code/prepare_fever.py" \
 To download and prepare from scratch:
 
 ```bash
-bash "CALE code/download_fever_data.sh"
+bash download_fever_data.sh
 ```
 
 ## Generate Qwen Responses
@@ -61,7 +62,7 @@ bash "CALE code/download_fever_data.sh"
 Smoke test first:
 
 ```bash
-python "CALE code/generate_responses.py" \
+python generate_responses.py \
   --dataset "data/fever/prepared/dev_prepared.jsonl" \
   --model "Qwen/Qwen2.5-7B-Instruct" \
   --output "outputs/fever_dev_qwen25_7b_smoke.jsonl" \
@@ -73,7 +74,7 @@ python "CALE code/generate_responses.py" \
 Full dev generation:
 
 ```bash
-python "CALE code/generate_responses.py" \
+python generate_responses.py \
   --dataset "data/fever/prepared/dev_prepared.jsonl" \
   --model "Qwen/Qwen2.5-7B-Instruct" \
   --output "outputs/fever_dev_qwen25_7b_neutral.jsonl" \
@@ -88,7 +89,7 @@ You can repeat generation with `--framing assertive` or `--framing authoritative
 Smoke test:
 
 ```bash
-python "CALE code/experiment.py" \
+python experiment.py \
   --dataset "outputs/fever_dev_qwen25_7b_smoke.jsonl" \
   --limit 20 \
   --summary-only \
@@ -99,7 +100,7 @@ python "CALE code/experiment.py" \
 Full internal evaluation with stress tests:
 
 ```bash
-python "CALE code/experiment.py" \
+python experiment.py \
   --dataset "outputs/fever_dev_qwen25_7b_neutral.jsonl" \
   --stress \
   --summary-only \
@@ -108,4 +109,3 @@ python "CALE code/experiment.py" \
 ```
 
 Use `--summary-only` for large runs. Without it, the report includes every prediction and every stress-test row, which can easily exceed 1GB.
-

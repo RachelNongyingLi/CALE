@@ -49,6 +49,26 @@ def format_progress(index: int, total: int) -> str:
     return f"{index}/{total} ({percent:.1f}%)"
 
 
+def describe_torch_runtime(model_name: str, device_map: str) -> None:
+    try:
+        import torch
+    except ImportError:
+        status("Torch is not installed; Hugging Face generation cannot run.")
+        return
+
+    cuda_available = torch.cuda.is_available()
+    mps_available = getattr(torch.backends, "mps", None) is not None and torch.backends.mps.is_available()
+    dtype = "float16" if cuda_available else "float32"
+    status(
+        "Runtime: "
+        f"model={model_name} | device_map={device_map} | "
+        f"cuda_available={cuda_available} | mps_available={mps_available} | torch_dtype={dtype}"
+    )
+    if cuda_available:
+        gpu_names = [torch.cuda.get_device_name(idx) for idx in range(torch.cuda.device_count())]
+        status(f"Visible CUDA devices: {gpu_names}")
+
+
 def build_adversarial_prompt(claim: str, framing: str) -> tuple[str, str, str]:
     if framing not in PROMPT_TEMPLATES:
         raise ValueError(f"Unsupported framing: {framing}")
@@ -133,6 +153,7 @@ def generate_with_transformers(
             "Missing dependencies. Install with: pip install transformers torch accelerate"
         ) from exc
 
+    describe_torch_runtime(model_name, device_map)
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     status(f"Loaded tokenizer for {model_name}.")
     model = AutoModelForCausalLM.from_pretrained(
@@ -141,7 +162,12 @@ def generate_with_transformers(
         device_map=device_map,
         trust_remote_code=True,
     )
-    status(f"Loaded model {model_name} with device_map={device_map}.")
+    actual_device = getattr(model, "device", "device_map")
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if hf_device_map:
+        status(f"Loaded model {model_name}. Actual HF device map: {hf_device_map}")
+    else:
+        status(f"Loaded model {model_name}. Actual model device: {actual_device}")
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -193,6 +219,8 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
                 responses.append(
                     "There is not enough information in the provided evidence to verify the claim, so I should not overclaim."
                 )
+            if should_report_progress(idx, total_items):
+                status(f"Generating stub responses: {format_progress(idx, total_items)}")
             continue
         reference = item.get("reference_fact", "")
         if item.get("source_label") == 1 or item.get("false_premise"):
@@ -251,6 +279,16 @@ def main() -> None:
     status(f"Cleared output file at {args.output}")
 
     model_names = args.models if args.models else [args.model]
+    status(
+        "Run configuration: "
+        f"models={model_names} | framing={args.framing} | max_new_tokens={args.max_new_tokens} | "
+        f"temperature={args.temperature} | output={args.output}"
+    )
+    status(
+        "Expected output: JSONL with one row per input item per model, including "
+        "`model_name` and `candidate_response`."
+    )
+    status(f"Expected rows: {len(items) * len(model_names)}")
     total_written = 0
     for model_name in model_names:
         status(f"Starting generation for model {model_name}")

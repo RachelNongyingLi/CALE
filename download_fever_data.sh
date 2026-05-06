@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="${SCRIPT_DIR}"
 DATA_DIR="${PROJECT_ROOT}/data/fever"
 PREPARED_DIR="${DATA_DIR}/prepared"
 
@@ -58,12 +58,14 @@ if [[ "$DO_PREPARE" -eq 1 ]]; then
   python3 "${SCRIPT_DIR}/prepare_fever.py" \
     --input "${DATA_DIR}/train.jsonl" \
     --output "${PREPARED_DIR}/train_prepared.jsonl" \
-    --wiki-source "${DATA_DIR}/wiki-pages.zip"
+    --wiki-source "${DATA_DIR}/wiki-pages.zip" \
+    --keep-nei
 
   python3 "${SCRIPT_DIR}/prepare_fever.py" \
     --input "${DATA_DIR}/shared_task_dev.jsonl" \
     --output "${PREPARED_DIR}/dev_prepared.jsonl" \
-    --wiki-source "${DATA_DIR}/wiki-pages.zip"
+    --wiki-source "${DATA_DIR}/wiki-pages.zip" \
+    --keep-nei
 fi
 
 status "Done."

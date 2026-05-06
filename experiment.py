@@ -702,6 +702,14 @@ def summarize_items(items: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+def summarize_distribution(items: list[dict[str, Any]], key: str) -> str:
+    counts: dict[str, int] = {}
+    for item in items:
+        value = str(item.get(key, "unknown"))
+        counts[value] = counts.get(value, 0) + 1
+    return ", ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
 def run_stress_tests(
     item: dict[str, Any],
     variants: list[str],
@@ -855,6 +863,23 @@ def main() -> None:
         items = items[: args.limit]
     validate_items_for_experiment(items)
     status(f"Loaded {len(items)} items from {args.dataset or 'built-in dataset'}.")
+    status(
+        "Run configuration: "
+        f"judge={args.judge} | judge_model={args.model or 'heuristic/default'} | repeats={args.repeats} | "
+        f"stress={args.stress} | summary_only={args.summary_only} | output={args.output or 'stdout'}"
+    )
+    status(f"Variants: {args.variants}")
+    status(
+        "Dataset summary: "
+        f"dataset=({summarize_distribution(items, 'dataset')}) | "
+        f"setting=({summarize_distribution(items, 'evaluation_setting')}) | "
+        f"domain=({summarize_distribution(items, 'domain')}) | "
+        f"risk=({summarize_distribution(items, 'risk_level')})"
+    )
+    status(
+        "Expected output: JSON report with `dataset_summary`, grouped metrics, "
+        "and optional `stress_summary`; raw rows are omitted when --summary-only is set."
+    )
     predictions: list[dict[str, Any]] = []
     total_predictions = len(items) * len(args.variants)
     prediction_index = 0
@@ -878,17 +903,28 @@ def main() -> None:
         report["predictions"] = predictions
     if args.stress:
         status("Starting perturbation stress tests.")
-        stress_tests = [
-            result
-            for item in items
-            for result in run_stress_tests(
+        stress_tests: list[dict[str, Any]] = []
+        total_stress_items = len(items)
+        total_perturbation_rows = len(items) * len(args.variants) * len(generate_perturbations(item_to_example(items[0])))
+        status(
+            "Expected stress output: "
+            f"{total_perturbation_rows} perturbation rows summarized into `stress_summary`."
+        )
+        for idx, item in enumerate(items, start=1):
+            stress_tests.extend(
+                run_stress_tests(
                 item,
                 variants=args.variants,
                 judge_kind=args.judge,
                 model=args.model,
                 repeats=args.repeats,
             )
-        ]
+            )
+            if should_report_progress(idx, total_stress_items):
+                status(
+                    "Completed stress items: "
+                    f"{format_progress(idx, total_stress_items)} | rows so far: {len(stress_tests)}"
+                )
         status(f"Finished stress tests with {len(stress_tests)} perturbation results.")
         report["stress_summary"] = compute_stress_summary(stress_tests)
         if not args.summary_only:
