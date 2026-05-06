@@ -12,6 +12,7 @@ This folder contains the code for running CALE experiments on adversarial factua
 - `perturbations.py`: stress-test perturbation definitions.
 - `download_fever_data.sh`: downloads raw FEVER data and optionally prepares it.
 - `run_pipeline.sh`: one-command FEVER generation and CALE evaluation pipeline.
+- `run_small_models_all_datasets.sh`: batch runner for the small-model preset over every prepared dataset.
 - `environment.yml`: conda environment for notebooks and pipeline dependencies except CUDA PyTorch.
 
 ## Environment
@@ -79,6 +80,8 @@ Run a 20-example smoke test:
 bash run_pipeline.sh
 ```
 
+The final line printed by the pipeline tells you exactly which report JSON to use in `visualize_results.ipynb`. Do not use the response `.jsonl` file as the notebook input.
+
 The default preset is:
 
 ```bash
@@ -117,6 +120,51 @@ If the 1B Llama model is fast and you want a stronger Llama-family comparison, t
 CALE_MODEL_PRESET=open_larger bash run_pipeline.sh
 ```
 
+## Run Small Models on All Prepared Datasets
+
+After each dataset has a prepared JSONL under `data/*/prepared/`, run:
+
+```bash
+bash run_small_models_all_datasets.sh
+```
+
+Preview the dataset list without running models:
+
+```bash
+CALE_DRY_RUN=1 bash run_small_models_all_datasets.sh
+```
+
+This discovers files such as `data/fever/prepared/dev_prepared.jsonl`, skips train splits by default, and writes reports under:
+
+```text
+outputs/small_models_all/
+```
+
+To include train splits:
+
+```bash
+CALE_INCLUDE_TRAIN=1 bash run_small_models_all_datasets.sh
+```
+
+To run a smoke pass across all prepared datasets:
+
+```bash
+CALE_RUN_MODE=smoke CALE_LIMIT=20 bash run_small_models_all_datasets.sh
+```
+
+To add stress-summary reports after the normal eval reports:
+
+```bash
+CALE_RUN_STRESS_SUMMARY=1 bash run_small_models_all_datasets.sh
+```
+
+To manually specify dataset files:
+
+```bash
+CALE_DATASETS="data/fever/prepared/dev_prepared.jsonl data/scifact/prepared/dev_prepared.jsonl" \
+bash run_small_models_all_datasets.sh
+```
+
 ## Manual Generation
 
 Smoke test first:
@@ -152,7 +200,7 @@ Smoke test:
 python experiment.py \
   --dataset "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl" \
   --limit 40 \
-  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_report.json" \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_eval_report.json" \
   --pretty
 ```
 
@@ -165,7 +213,7 @@ python experiment.py \
   --dataset "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl" \
   --stress \
   --summary-only \
-  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_report.json" \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_stress_summary_report.json" \
   --pretty
 ```
 
@@ -176,5 +224,5 @@ Use `--summary-only` for large runs. Without it, the report includes every predi
 Open `visualize_results.ipynb` and set `RESULTS_PATH` to the report JSON from `experiment.py`, not the generated response JSONL. The notebook defaults to:
 
 ```text
-outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_report.json
+outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_eval_report.json
 ```

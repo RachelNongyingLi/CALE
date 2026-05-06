@@ -17,6 +17,8 @@ MODEL_PRESET="${CALE_MODEL_PRESET:-open_small}"
 SKIP_PREPARE="${CALE_SKIP_PREPARE:-0}"
 RUN_STRESS="${CALE_RUN_STRESS:-0}"
 SUMMARY_ONLY="${CALE_SUMMARY_ONLY:-0}"
+SKIP_GENERATION="${CALE_SKIP_GENERATION:-0}"
+RUN_TAG_PREFIX="${CALE_RUN_TAG_PREFIX:-fever_dev}"
 
 if [[ -n "${CALE_MODELS:-}" ]]; then
   MODELS="$CALE_MODELS"
@@ -72,6 +74,8 @@ Environment overrides:
   CALE_SKIP_PREPARE=1
   CALE_RUN_STRESS=1
   CALE_SUMMARY_ONLY=1
+  CALE_SKIP_GENERATION=1
+  CALE_RUN_TAG_PREFIX=fever_dev
 
 Notes:
   CALE_MODEL_PRESET is ignored when CALE_MODELS is set.
@@ -138,18 +142,28 @@ for model in "${MODEL_ARRAY[@]}"; do
   MODEL_SLUGS+=("$(model_slug "$model")")
 done
 JOINED_SLUGS="$(IFS=_; printf '%s' "${MODEL_SLUGS[*]}")"
-RUN_TAG="fever_dev_${JOINED_SLUGS}_${FRAMING}_${RUN_MODE}"
+RUN_TAG="${RUN_TAG_PREFIX}_${JOINED_SLUGS}_${FRAMING}_${RUN_MODE}"
+REPORT_KIND="eval"
+if [[ "$RUN_STRESS" == "1" && "$SUMMARY_ONLY" == "1" ]]; then
+  REPORT_KIND="stress_summary"
+elif [[ "$RUN_STRESS" == "1" ]]; then
+  REPORT_KIND="stress_full"
+elif [[ "$SUMMARY_ONLY" == "1" ]]; then
+  REPORT_KIND="eval_summary"
+fi
 
 RESPONSES_PATH="${OUTPUT_DIR}/${RUN_TAG}.jsonl"
-REPORT_PATH="${OUTPUT_DIR}/${RUN_TAG}_report.json"
+REPORT_PATH="${OUTPUT_DIR}/${RUN_TAG}_${REPORT_KIND}_report.json"
 
 status "Project root: ${PROJECT_ROOT}"
 status "Dataset: ${DATASET}"
 status "Model preset: ${MODEL_PRESET}"
 status "Models: ${MODELS}"
-status "Run mode: ${RUN_MODE} | framing=${FRAMING} | limit=${LIMIT} | stress=${RUN_STRESS} | summary_only=${SUMMARY_ONLY}"
+status "Run tag prefix: ${RUN_TAG_PREFIX}"
+status "Run mode: ${RUN_MODE} | framing=${FRAMING} | limit=${LIMIT} | stress=${RUN_STRESS} | summary_only=${SUMMARY_ONLY} | skip_generation=${SKIP_GENERATION}"
 status "Response output: ${RESPONSES_PATH}"
 status "Report output: ${REPORT_PATH}"
+status "Visualization input should be the report JSON, not the responses JSONL."
 
 if [[ "$MODELS" == *"meta-llama/"* && -z "${HF_TOKEN:-}" ]]; then
   status "HF_TOKEN is not set. Meta Llama downloads may fail unless the model is already cached."
@@ -173,11 +187,16 @@ if [[ "$RUN_MODE" == "smoke" ]]; then
   GEN_ARGS+=(--limit "$LIMIT")
 fi
 
-status "Generating model responses."
-"${GEN_ARGS[@]}"
+if [[ "$SKIP_GENERATION" == "1" ]]; then
+  status "Skipping response generation and reusing existing response JSONL."
+else
+  status "Generating model responses."
+  "${GEN_ARGS[@]}"
+fi
 
 if [[ ! -s "$RESPONSES_PATH" ]]; then
   printf 'Response file is empty: %s\n' "$RESPONSES_PATH" >&2
+  printf 'If you used CALE_SKIP_GENERATION=1, run once without it first.\n' >&2
   exit 1
 fi
 
@@ -206,5 +225,8 @@ status "Running CALE experiment."
 "${EXP_ARGS[@]}"
 
 status "Done."
-printf 'Responses JSONL: %s\n' "$RESPONSES_PATH"
-printf 'Report JSON: %s\n' "$REPORT_PATH"
+printf '\nGenerated files:\n'
+printf '  Responses JSONL: %s\n' "$RESPONSES_PATH"
+printf '  Report JSON:     %s\n' "$REPORT_PATH"
+printf '\nUse this in visualize_results.ipynb:\n'
+printf '  RESULTS_PATH = Path("%s")\n' "$REPORT_PATH"
