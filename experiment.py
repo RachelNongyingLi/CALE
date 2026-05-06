@@ -32,6 +32,7 @@ import csv
 import json
 import statistics
 import sys
+import time
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,21 @@ def should_report_progress(index: int, total: int, every_percent: int = 10) -> b
 def format_progress(index: int, total: int) -> str:
     percent = (index * 100) / total if total else 100.0
     return f"{index}/{total} ({percent:.1f}%)"
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def format_timing(index: int, total: int, start_time: float) -> str:
+    elapsed = max(0.001, time.monotonic() - start_time)
+    rate = index / elapsed if index else 0.0
+    remaining = max(0, total - index)
+    eta = remaining / rate if rate > 0 else 0.0
+    return f"elapsed={format_duration(elapsed)} | eta={format_duration(eta)} | rate={rate:.2f} items/s"
 
 
 def load_dataset(path: str | None) -> list[dict[str, Any]]:
@@ -909,13 +925,17 @@ def main() -> None:
     predictions: list[dict[str, Any]] = []
     total_predictions = len(items) * len(args.variants)
     prediction_index = 0
+    prediction_start = time.monotonic()
     status(f"Running {len(args.variants)} evaluator variants over {len(items)} items.")
     for item in items:
         for variant in args.variants:
             prediction_index += 1
             predictions.append(run_variant(item, variant, args.judge, args.model, args.repeats))
             if should_report_progress(prediction_index, total_predictions):
-                status(f"Completed evaluator runs: {format_progress(prediction_index, total_predictions)}")
+                status(
+                    f"Completed evaluator runs: {format_progress(prediction_index, total_predictions)} | "
+                    f"{format_timing(prediction_index, total_predictions, prediction_start)}"
+                )
 
     report: dict[str, Any] = {
         "run_config": {
@@ -950,6 +970,7 @@ def main() -> None:
         stress_tests: list[dict[str, Any]] = []
         total_stress_items = len(items)
         total_perturbation_rows = len(items) * len(args.variants) * len(generate_perturbations(item_to_example(items[0])))
+        stress_start = time.monotonic()
         status(
             "Expected stress output: "
             f"{total_perturbation_rows} perturbation rows summarized into `stress_summary`."
@@ -967,7 +988,8 @@ def main() -> None:
             if should_report_progress(idx, total_stress_items):
                 status(
                     "Completed stress items: "
-                    f"{format_progress(idx, total_stress_items)} | rows so far: {len(stress_tests)}"
+                    f"{format_progress(idx, total_stress_items)} | rows so far: {len(stress_tests)} | "
+                    f"{format_timing(idx, total_stress_items, stress_start)}"
                 )
         status(f"Finished stress tests with {len(stress_tests)} perturbation results.")
         report["stress_summary"] = compute_stress_summary(stress_tests)

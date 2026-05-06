@@ -16,8 +16,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from experiment import load_dataset, normalize_item_metadata
 
@@ -47,6 +48,21 @@ def should_report_progress(index: int, total: int, every_percent: int = 10) -> b
 def format_progress(index: int, total: int) -> str:
     percent = (index * 100) / total if total else 100.0
     return f"{index}/{total} ({percent:.1f}%)"
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def format_timing(index: int, total: int, start_time: float) -> str:
+    elapsed = max(0.001, time.monotonic() - start_time)
+    rate = index / elapsed if index else 0.0
+    remaining = max(0, total - index)
+    eta = remaining / rate if rate > 0 else 0.0
+    return f"elapsed={format_duration(elapsed)} | eta={format_duration(eta)} | rate={rate:.2f} items/s"
 
 
 def describe_torch_runtime(model_name: str, device_map: str) -> None:
@@ -144,6 +160,8 @@ def generate_with_transformers(
     max_new_tokens: int,
     temperature: float,
     device_map: str,
+    batch_size: int,
+    batch_callback: Callable[[list[dict[str, Any]], list[str]], None] | None = None,
 ) -> list[str]:
     try:
         import torch
@@ -170,22 +188,31 @@ def generate_with_transformers(
         status(f"Loaded model {model_name}. Actual model device: {actual_device}")
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
 
     outputs: list[str] = []
     total_items = len(items)
-    for idx, item in enumerate(items, start=1):
-        prompt = build_generation_prompt(item)
-        messages = [{"role": "user", "content": prompt}]
-        if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
-            model_input_text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        else:
-            model_input_text = prompt
+    batch_size = max(1, batch_size)
+    status(f"Generation batch size for {model_name}: {batch_size}")
+    generation_start = time.monotonic()
+    for batch_start in range(0, total_items, batch_size):
+        batch_items = items[batch_start : batch_start + batch_size]
+        model_input_texts = []
+        for item in batch_items:
+            prompt = build_generation_prompt(item)
+            messages = [{"role": "user", "content": prompt}]
+            if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
+                model_input_texts.append(
+                    tokenizer.apply_chat_template(
+                        messages,
+                        tokenize=False,
+                        add_generation_prompt=True,
+                    )
+                )
+            else:
+                model_input_texts.append(prompt)
 
-        inputs = tokenizer(model_input_text, return_tensors="pt").to(model.device)
+        inputs = tokenizer(model_input_texts, return_tensors="pt", padding=True).to(model.device)
         generation = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
@@ -193,10 +220,20 @@ def generate_with_transformers(
             temperature=temperature if temperature > 0 else None,
             pad_token_id=tokenizer.pad_token_id,
         )
-        new_tokens = generation[0][inputs["input_ids"].shape[-1] :]
-        outputs.append(tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
-        if should_report_progress(idx, total_items):
-            status(f"Generating responses for {model_name}: {format_progress(idx, total_items)}")
+        prompt_length = inputs["input_ids"].shape[-1]
+        batch_outputs = []
+        for row_idx in range(len(batch_items)):
+            new_tokens = generation[row_idx][prompt_length:]
+            batch_outputs.append(tokenizer.decode(new_tokens, skip_special_tokens=True).strip())
+        outputs.extend(batch_outputs)
+        if batch_callback is not None:
+            batch_callback(batch_items, batch_outputs)
+        completed = min(batch_start + len(batch_items), total_items)
+        if should_report_progress(completed, total_items):
+            status(
+                f"Generating responses for {model_name}: {format_progress(completed, total_items)} | "
+                f"{format_timing(completed, total_items, generation_start)}"
+            )
     return outputs
 
 
@@ -204,6 +241,7 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
     """Cheap local mode for verifying the file pipeline without loading a model."""
     responses = []
     total_items = len(items)
+    generation_start = time.monotonic()
     for idx, item in enumerate(items, start=1):
         if "reference_label" in item:
             label = item["reference_label"]
@@ -220,7 +258,10 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
                     "There is not enough information in the provided evidence to verify the claim, so I should not overclaim."
                 )
             if should_report_progress(idx, total_items):
-                status(f"Generating stub responses: {format_progress(idx, total_items)}")
+                status(
+                    f"Generating stub responses: {format_progress(idx, total_items)} | "
+                    f"{format_timing(idx, total_items, generation_start)}"
+                )
             continue
         reference = item.get("reference_fact", "")
         if item.get("source_label") == 1 or item.get("false_premise"):
@@ -231,7 +272,10 @@ def generate_with_stub(items: list[dict[str, Any]]) -> list[str]:
         else:
             responses.append(reference)
         if should_report_progress(idx, total_items):
-            status(f"Generating stub responses: {format_progress(idx, total_items)}")
+            status(
+                f"Generating stub responses: {format_progress(idx, total_items)} | "
+                f"{format_timing(idx, total_items, generation_start)}"
+            )
     return responses
 
 
@@ -242,6 +286,26 @@ def write_jsonl(items: list[dict[str, Any]], responses: list[str], output_path: 
             enriched["model_name"] = model_name
             enriched["candidate_response"] = response
             file.write(json.dumps(enriched, ensure_ascii=False) + "\n")
+
+
+def count_existing_outputs(output_path: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    path = Path(output_path)
+    if not path.exists():
+        return counts
+    with path.open("r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                status("Skipping one malformed existing output line while counting resume state.")
+                continue
+            model_name = str(row.get("model_name", "unknown"))
+            counts[model_name] = counts.get(model_name, 0) + 1
+    return counts
 
 
 def main() -> None:
@@ -264,6 +328,8 @@ def main() -> None:
     parser.add_argument("--max-new-tokens", type=int, default=160)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--device-map", default="auto")
+    parser.add_argument("--batch-size", type=int, default=1, help="Batch size for local Hugging Face generation.")
+    parser.add_argument("--resume", action="store_true", help="Append missing rows instead of clearing an existing output JSONL.")
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
@@ -275,14 +341,19 @@ def main() -> None:
     status(f"Prepared {len(items)} items with framing={args.framing}.")
 
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.output).write_text("", encoding="utf-8")
-    status(f"Cleared output file at {args.output}")
+    existing_counts: dict[str, int] = {}
+    if args.resume:
+        existing_counts = count_existing_outputs(args.output)
+        status(f"Resume enabled. Existing rows by model: {existing_counts or '{}'}")
+    else:
+        Path(args.output).write_text("", encoding="utf-8")
+        status(f"Cleared output file at {args.output}")
 
     model_names = args.models if args.models else [args.model]
     status(
         "Run configuration: "
         f"models={model_names} | framing={args.framing} | max_new_tokens={args.max_new_tokens} | "
-        f"temperature={args.temperature} | output={args.output}"
+        f"temperature={args.temperature} | batch_size={args.batch_size} | output={args.output}"
     )
     status(
         "Expected output: JSONL with one row per input item per model, including "
@@ -292,21 +363,36 @@ def main() -> None:
     total_written = 0
     for model_name in model_names:
         status(f"Starting generation for model {model_name}")
+        existing_count = min(existing_counts.get(model_name, 0), len(items))
+        if existing_count >= len(items):
+            status(f"Skipping {model_name}: found {existing_count}/{len(items)} existing rows.")
+            continue
+        run_items = items[existing_count:]
+        if existing_count:
+            status(f"Resuming {model_name}: skipping {existing_count} existing rows; generating {len(run_items)} remaining rows.")
         if model_name == "stub":
-            responses = generate_with_stub(items)
+            responses = generate_with_stub(run_items)
         else:
             responses = generate_with_transformers(
-                items=items,
+                items=run_items,
                 model_name=model_name,
                 max_new_tokens=args.max_new_tokens,
                 temperature=args.temperature,
                 device_map=args.device_map,
+                batch_size=args.batch_size,
+                batch_callback=lambda batch_items, batch_responses, current_model=model_name: write_jsonl(
+                    batch_items,
+                    batch_responses,
+                    args.output,
+                    current_model,
+                ),
             )
-        write_jsonl(items, responses, args.output, model_name)
-        total_written += len(items)
-        status(f"Wrote {len(items)} generated responses for {model_name} to {args.output}")
+        if model_name == "stub":
+            write_jsonl(run_items, responses, args.output, model_name)
+        total_written += len(run_items)
+        status(f"Wrote {len(run_items)} generated responses for {model_name} to {args.output}")
 
-    status(f"Finished writing {total_written} total generated responses to {args.output}")
+    status(f"Finished writing {total_written} new generated responses to {args.output}")
 
 
 if __name__ == "__main__":

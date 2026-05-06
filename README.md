@@ -158,6 +158,20 @@ To add stress-summary reports after the normal eval reports:
 CALE_RUN_STRESS_SUMMARY=1 bash run_small_models_all_datasets.sh
 ```
 
+On larger GPUs such as A100, increase generation batch size without changing the prompts, model, temperature, or max-token setting:
+
+```bash
+CALE_BATCH_SIZE=8 bash run_small_models_all_datasets.sh
+```
+
+If memory is still comfortable, try `CALE_BATCH_SIZE=16`; if you hit CUDA OOM, reduce it to `4`.
+
+To continue from an interrupted response JSONL instead of starting from scratch:
+
+```bash
+CALE_RESUME=1 CALE_BATCH_SIZE=8 bash run_small_models_all_datasets.sh
+```
+
 To manually specify dataset files:
 
 ```bash
@@ -176,7 +190,8 @@ python generate_responses.py \
   --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl" \
   --limit 20 \
   --framing neutral \
-  --device-map auto
+  --device-map auto \
+  --batch-size 8
 ```
 
 Full dev generation:
@@ -187,7 +202,8 @@ python generate_responses.py \
   --models "Qwen/Qwen2.5-1.5B-Instruct" "meta-llama/Llama-3.2-1B-Instruct" \
   --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl" \
   --framing neutral \
-  --device-map auto
+  --device-map auto \
+  --batch-size 8
 ```
 
 You can repeat generation with `--framing assertive` or `--framing authoritative` to create matched adversarial framing sets.

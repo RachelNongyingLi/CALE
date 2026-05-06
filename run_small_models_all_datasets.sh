@@ -36,6 +36,8 @@ Environment overrides:
   CALE_RUN_MODE=full|smoke
   CALE_LIMIT=20
   CALE_FRAMING=neutral|assertive|authoritative|polite_misleading
+  CALE_BATCH_SIZE=8
+  CALE_RESUME=1
   CALE_DATASETS="data/fever/prepared/dev_prepared.jsonl data/scifact/prepared/dev_prepared.jsonl"
   CALE_DATA_ROOT=data
   CALE_OUTPUT_DIR=outputs/small_models_all

@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import zipfile
 from collections import defaultdict
 from pathlib import Path
@@ -52,6 +53,21 @@ def should_report_progress(index: int, total: int, every_percent: int = 10) -> b
 def format_progress(index: int, total: int) -> str:
     percent = (index * 100) / total if total else 100.0
     return f"{index}/{total} ({percent:.1f}%)"
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(0, int(seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def format_timing(index: int, total: int, start_time: float) -> str:
+    elapsed = max(0.001, time.monotonic() - start_time)
+    rate = index / elapsed if index else 0.0
+    remaining = max(0, total - index)
+    eta = remaining / rate if rate > 0 else 0.0
+    return f"elapsed={format_duration(elapsed)} | eta={format_duration(eta)} | rate={rate:.2f} items/s"
 
 
 def load_fever_rows(path: Path) -> list[dict[str, Any]]:
@@ -165,6 +181,7 @@ def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[st
             with zipfile.ZipFile(wiki_source) as archive:
                 members = archive.namelist()
                 total_members = len(members)
+                scan_start = time.monotonic()
                 status(f"Scanning wiki zip with {total_members} archive members.")
                 for idx, member in enumerate(members, start=1):
                     if member.endswith("/"):
@@ -174,7 +191,8 @@ def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[st
                     if should_report_progress(idx, total_members):
                         status(
                             f"Reading wiki archive members: {format_progress(idx, total_members)} "
-                            f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)}"
+                            f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)} | "
+                            f"{format_timing(idx, total_members, scan_start)}"
                         )
                     with archive.open(member) as raw_handle:
                         text_handle = (
@@ -197,12 +215,14 @@ def load_wiki_index(wiki_source: Path | None, needed_pages: set[str]) -> dict[st
             if path.is_file() and path.suffix in {".jsonl", ".json", ".txt"}
         ]
         total_paths = len(candidate_paths)
+        scan_start = time.monotonic()
         status(f"Scanning wiki directory with {total_paths} candidate files.")
         for idx, path in enumerate(candidate_paths, start=1):
             if should_report_progress(idx, total_paths):
                 status(
                     f"Reading wiki files: {format_progress(idx, total_paths)} "
-                    f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)}"
+                    f"| resolved pages so far: {len(page_to_sentences)}/{len(needed_pages)} | "
+                    f"{format_timing(idx, total_paths, scan_start)}"
                 )
             if not path.is_file():
                 continue
@@ -299,10 +319,11 @@ def write_jsonl(rows: list[dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as handle:
         total_rows = len(rows)
+        write_start = time.monotonic()
         for idx, row in enumerate(rows, start=1):
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             if should_report_progress(idx, total_rows):
-                status(f"Writing output rows: {format_progress(idx, total_rows)}")
+                status(f"Writing output rows: {format_progress(idx, total_rows)} | {format_timing(idx, total_rows, write_start)}")
 
 
 def main() -> None:
@@ -345,10 +366,11 @@ def main() -> None:
     status(f"Resolved wiki evidence for {len(wiki_index)} pages. Normalizing rows now.")
     prepared: list[dict[str, Any]] = []
     total_rows = len(rows)
+    normalize_start = time.monotonic()
     for idx, row in enumerate(rows, start=1):
         prepared.append(normalize_row(row, wiki_index))
         if should_report_progress(idx, total_rows):
-            status(f"Normalizing FEVER rows: {format_progress(idx, total_rows)}")
+            status(f"Normalizing FEVER rows: {format_progress(idx, total_rows)} | {format_timing(idx, total_rows, normalize_start)}")
     status(f"Writing prepared dataset to {output_path}")
     write_jsonl(prepared, output_path)
 

@@ -13,12 +13,14 @@ FRAMING="${CALE_FRAMING:-neutral}"
 DEVICE_MAP="${CALE_DEVICE_MAP:-auto}"
 MAX_NEW_TOKENS="${CALE_MAX_NEW_TOKENS:-160}"
 TEMPERATURE="${CALE_TEMPERATURE:-0.0}"
+BATCH_SIZE="${CALE_BATCH_SIZE:-1}"
 MODEL_PRESET="${CALE_MODEL_PRESET:-open_small}"
 SKIP_PREPARE="${CALE_SKIP_PREPARE:-0}"
 RUN_STRESS="${CALE_RUN_STRESS:-0}"
 SUMMARY_ONLY="${CALE_SUMMARY_ONLY:-0}"
 SKIP_GENERATION="${CALE_SKIP_GENERATION:-0}"
 RUN_TAG_PREFIX="${CALE_RUN_TAG_PREFIX:-fever_dev}"
+RESUME="${CALE_RESUME:-0}"
 
 if [[ -n "${CALE_MODELS:-}" ]]; then
   MODELS="$CALE_MODELS"
@@ -71,11 +73,13 @@ Environment overrides:
   CALE_DEVICE_MAP=auto
   CALE_MAX_NEW_TOKENS=160
   CALE_TEMPERATURE=0.0
+  CALE_BATCH_SIZE=8
   CALE_SKIP_PREPARE=1
   CALE_RUN_STRESS=1
   CALE_SUMMARY_ONLY=1
   CALE_SKIP_GENERATION=1
   CALE_RUN_TAG_PREFIX=fever_dev
+  CALE_RESUME=1
 
 Notes:
   CALE_MODEL_PRESET is ignored when CALE_MODELS is set.
@@ -160,7 +164,7 @@ status "Dataset: ${DATASET}"
 status "Model preset: ${MODEL_PRESET}"
 status "Models: ${MODELS}"
 status "Run tag prefix: ${RUN_TAG_PREFIX}"
-status "Run mode: ${RUN_MODE} | framing=${FRAMING} | limit=${LIMIT} | stress=${RUN_STRESS} | summary_only=${SUMMARY_ONLY} | skip_generation=${SKIP_GENERATION}"
+status "Run mode: ${RUN_MODE} | framing=${FRAMING} | limit=${LIMIT} | batch_size=${BATCH_SIZE} | stress=${RUN_STRESS} | summary_only=${SUMMARY_ONLY} | skip_generation=${SKIP_GENERATION} | resume=${RESUME}"
 status "Response output: ${RESPONSES_PATH}"
 status "Report output: ${REPORT_PATH}"
 status "Visualization input should be the report JSON, not the responses JSONL."
@@ -181,7 +185,12 @@ GEN_ARGS=(
   --device-map "$DEVICE_MAP"
   --max-new-tokens "$MAX_NEW_TOKENS"
   --temperature "$TEMPERATURE"
+  --batch-size "$BATCH_SIZE"
 )
+
+if [[ "$RESUME" == "1" ]]; then
+  GEN_ARGS+=(--resume)
+fi
 
 if [[ "$RUN_MODE" == "smoke" ]]; then
   GEN_ARGS+=(--limit "$LIMIT")
