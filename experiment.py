@@ -596,11 +596,12 @@ def item_to_example(item: dict[str, Any]) -> Example:
     )
 
 
-def row_identity(row: dict[str, Any]) -> tuple[str, str, str]:
+def row_identity(row: dict[str, Any]) -> tuple[str, str, str, str]:
     row_id = str(row.get("id") or row.get("base_claim") or row.get("claim") or row.get("user_prompt") or "")
     return (
         str(row.get("dataset", "")),
         str(row.get("evaluation_setting", "")),
+        str(row.get("model_name", "unknown")),
         row_id,
     )
 
@@ -668,16 +669,19 @@ def compute_metrics_by_metadata(
     predictions: list[dict[str, Any]],
     metadata_key: str,
 ) -> dict[str, Any]:
+    def metadata_value(row: dict[str, Any]) -> str:
+        value = str(row.get(metadata_key, "unknown")).strip()
+        return value if value else "unknown"
+
     values = sorted(
         {
-            str(row.get(metadata_key, ""))
+            metadata_value(row)
             for row in items + predictions
-            if str(row.get(metadata_key, "")).strip()
         }
     )
     grouped_metrics: dict[str, Any] = {}
     for value in values:
-        subset_items = [item for item in items if str(item.get(metadata_key, "")) == value]
+        subset_items = [item for item in items if metadata_value(item) == value]
         subset_item_ids = {row_identity(item) for item in subset_items}
         subset_predictions = [pred for pred in predictions if row_identity(pred) in subset_item_ids]
         if subset_items and subset_predictions:
@@ -689,11 +693,13 @@ def summarize_items(items: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "n_items": len(items),
         "by_dataset": {},
+        "by_dataset_role": {},
         "by_evaluation_setting": {},
         "by_domain": {},
         "by_risk_level": {},
+        "by_model_name": {},
     }
-    for key in ("dataset", "evaluation_setting", "domain", "risk_level"):
+    for key in ("dataset", "dataset_role", "evaluation_setting", "domain", "risk_level", "model_name"):
         bucket: dict[str, int] = {}
         for item in items:
             value = str(item.get(key, "unknown"))
@@ -791,6 +797,25 @@ def compute_stress_summary(stress_results: list[dict[str, Any]]) -> dict[str, An
     return summary
 
 
+def compute_stress_summary_by_metadata(
+    stress_results: list[dict[str, Any]],
+    metadata_key: str,
+) -> dict[str, Any]:
+    values = sorted(
+        {
+            str(row.get(metadata_key, ""))
+            for row in stress_results
+            if str(row.get(metadata_key, "")).strip()
+        }
+    )
+    grouped_summary: dict[str, Any] = {}
+    for value in values:
+        subset = [row for row in stress_results if str(row.get(metadata_key, "")) == value]
+        if subset:
+            grouped_summary[value] = compute_stress_summary(subset)
+    return grouped_summary
+
+
 def accuracy(y_true: list[str], y_pred: list[str]) -> float:
     if not y_true:
         return 0.0
@@ -874,7 +899,8 @@ def main() -> None:
         f"dataset=({summarize_distribution(items, 'dataset')}) | "
         f"setting=({summarize_distribution(items, 'evaluation_setting')}) | "
         f"domain=({summarize_distribution(items, 'domain')}) | "
-        f"risk=({summarize_distribution(items, 'risk_level')})"
+        f"risk=({summarize_distribution(items, 'risk_level')}) | "
+        f"model=({summarize_distribution(items, 'model_name')})"
     )
     status(
         "Expected output: JSON report with `dataset_summary`, grouped metrics, "
@@ -892,10 +918,28 @@ def main() -> None:
                 status(f"Completed evaluator runs: {format_progress(prediction_index, total_predictions)}")
 
     report: dict[str, Any] = {
+        "run_config": {
+            "dataset_path": args.dataset,
+            "judge": args.judge,
+            "judge_model": args.model or "heuristic/default",
+            "repeats": args.repeats,
+            "stress": args.stress,
+            "summary_only": args.summary_only,
+            "variants": args.variants,
+            "target_models": sorted(
+                {
+                    str(item.get("model_name", "unknown"))
+                    for item in items
+                    if str(item.get("model_name", "unknown")).strip()
+                }
+            ),
+        },
         "dataset_summary": summarize_items(items),
         "metrics": compute_metrics(items, predictions),
+        "metrics_by_model": compute_metrics_by_metadata(items, predictions, "model_name"),
         "metrics_by_setting": compute_metrics_by_metadata(items, predictions, "evaluation_setting"),
         "metrics_by_dataset": compute_metrics_by_metadata(items, predictions, "dataset"),
+        "metrics_by_dataset_role": compute_metrics_by_metadata(items, predictions, "dataset_role"),
         "metrics_by_domain": compute_metrics_by_metadata(items, predictions, "domain"),
         "metrics_by_risk_level": compute_metrics_by_metadata(items, predictions, "risk_level"),
     }
@@ -927,6 +971,7 @@ def main() -> None:
                 )
         status(f"Finished stress tests with {len(stress_tests)} perturbation results.")
         report["stress_summary"] = compute_stress_summary(stress_tests)
+        report["stress_summary_by_model"] = compute_stress_summary_by_metadata(stress_tests, "model_name")
         if not args.summary_only:
             report["stress_tests"] = stress_tests
 

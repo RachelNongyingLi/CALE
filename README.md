@@ -5,12 +5,13 @@ This folder contains the code for running CALE experiments on adversarial factua
 ## Files
 
 - `prepare_fever.py`: converts raw FEVER files into CALE-ready claim resources.
-- `generate_responses.py`: generates target model responses with `stub` or Hugging Face models such as `Qwen/Qwen2.5-7B-Instruct`.
+- `generate_responses.py`: generates target model responses with `stub` or Hugging Face models such as `Qwen/Qwen2.5-1.5B-Instruct`.
 - `experiment.py`: runs direct-judge and CALE evaluator variants, with optional stress tests.
 - `cale_demo.py`: core CALE schema, heuristic judge, scoring, calibration, and aggregation.
 - `llm_judge.py`: direct and structured judge backends.
 - `perturbations.py`: stress-test perturbation definitions.
 - `download_fever_data.sh`: downloads raw FEVER data and optionally prepares it.
+- `run_pipeline.sh`: one-command FEVER generation and CALE evaluation pipeline.
 - `environment.yml`: conda environment for notebooks and pipeline dependencies except CUDA PyTorch.
 
 ## Environment
@@ -57,15 +58,74 @@ To download and prepare from scratch:
 bash download_fever_data.sh
 ```
 
-## Generate Qwen Responses
+## Recommended One-Command Pipeline
+
+The default pipeline compares a Qwen-family model with a Llama-family model that should fit a single RTX 2080 Ti:
+
+```text
+Qwen/Qwen2.5-1.5B-Instruct
+meta-llama/Llama-3.2-1B-Instruct
+```
+
+The Meta Llama model may require accepting the Hugging Face license and setting `HF_TOKEN`:
+
+```bash
+export HF_TOKEN="your_huggingface_token"
+```
+
+Run a 20-example smoke test:
+
+```bash
+bash run_pipeline.sh
+```
+
+The default preset is:
+
+```bash
+CALE_MODEL_PRESET=open_small bash run_pipeline.sh
+```
+
+Useful model presets:
+
+```text
+open_small        Qwen2.5-1.5B + Llama3.2-1B
+open_tiny         Qwen2.5-0.5B + Llama3.2-1B
+open_larger       Qwen2.5-1.5B + Llama3.2-3B
+open_three_family Qwen2.5-1.5B + Llama3.2-1B + Gemma2-2B
+qwen_only         Qwen2.5-1.5B
+llama_only        Llama3.2-1B
+```
+
+Run the full FEVER dev split with stress-test summaries:
+
+```bash
+CALE_RUN_MODE=full \
+CALE_RUN_STRESS=1 \
+CALE_SUMMARY_ONLY=1 \
+bash run_pipeline.sh
+```
+
+If the Llama model is not accessible yet, run only Qwen:
+
+```bash
+CALE_MODEL_PRESET=qwen_only bash run_pipeline.sh
+```
+
+If the 1B Llama model is fast and you want a stronger Llama-family comparison, try:
+
+```bash
+CALE_MODEL_PRESET=open_larger bash run_pipeline.sh
+```
+
+## Manual Generation
 
 Smoke test first:
 
 ```bash
 python generate_responses.py \
   --dataset "data/fever/prepared/dev_prepared.jsonl" \
-  --model "Qwen/Qwen2.5-7B-Instruct" \
-  --output "outputs/fever_dev_qwen25_7b_smoke.jsonl" \
+  --models "Qwen/Qwen2.5-1.5B-Instruct" "meta-llama/Llama-3.2-1B-Instruct" \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl" \
   --limit 20 \
   --framing neutral \
   --device-map auto
@@ -76,8 +136,8 @@ Full dev generation:
 ```bash
 python generate_responses.py \
   --dataset "data/fever/prepared/dev_prepared.jsonl" \
-  --model "Qwen/Qwen2.5-7B-Instruct" \
-  --output "outputs/fever_dev_qwen25_7b_neutral.jsonl" \
+  --models "Qwen/Qwen2.5-1.5B-Instruct" "meta-llama/Llama-3.2-1B-Instruct" \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl" \
   --framing neutral \
   --device-map auto
 ```
@@ -90,22 +150,31 @@ Smoke test:
 
 ```bash
 python experiment.py \
-  --dataset "outputs/fever_dev_qwen25_7b_smoke.jsonl" \
-  --limit 20 \
-  --summary-only \
-  --output "outputs/fever_dev_qwen25_7b_smoke_report.json" \
+  --dataset "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl" \
+  --limit 40 \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_report.json" \
   --pretty
 ```
+
+This smoke report keeps row-level `predictions`, which is useful for checking the visualization notebook.
 
 Full internal evaluation with stress tests:
 
 ```bash
 python experiment.py \
-  --dataset "outputs/fever_dev_qwen25_7b_neutral.jsonl" \
+  --dataset "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl" \
   --stress \
   --summary-only \
-  --output "outputs/fever_dev_qwen25_7b_neutral_stress_summary.json" \
+  --output "outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_report.json" \
   --pretty
 ```
 
 Use `--summary-only` for large runs. Without it, the report includes every prediction and every stress-test row, which can easily exceed 1GB.
+
+## Visualize Results
+
+Open `visualize_results.ipynb` and set `RESULTS_PATH` to the report JSON from `experiment.py`, not the generated response JSONL. The notebook defaults to:
+
+```text
+outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_report.json
+```

@@ -3,9 +3,9 @@
 
 Example:
   python generate_responses.py \
-    --dataset /path/to/train.csv \
-    --model Qwen/Qwen2.5-7B-Instruct \
-    --output generated_qwen25_7b.jsonl \
+    --dataset data/fever/prepared/dev_prepared.jsonl \
+    --models Qwen/Qwen2.5-1.5B-Instruct meta-llama/Llama-3.2-1B-Instruct \
+    --output outputs/fever_dev_qwen_llama_smoke.jsonl \
     --limit 20
 
 The output JSONL is compatible with `experiment.py --dataset`.
