@@ -9,6 +9,7 @@ The output schema is intentionally lightweight:
   - resource
   - base_claim
   - reference_label
+  - reference_fact
   - supporting_evidence
   - reference_evidence
   - verifiable
@@ -265,12 +266,14 @@ def normalize_row(
     supporting_evidence = " ".join(evidence_texts).strip()
     if not supporting_evidence and evidence_records:
         supporting_evidence = json.dumps(evidence_records, ensure_ascii=False)
+    reference_fact = evidence_texts[0].strip() if evidence_texts else ""
 
     return {
         "id": f"fever_{fever_row['id']}",
         "resource": "FEVER",
         "base_claim": fever_row["claim"].strip(),
         "reference_label": fever_row["label"],
+        "reference_fact": reference_fact,
         "supporting_evidence": supporting_evidence,
         "reference_evidence": evidence_texts,
         "verifiable": fever_row.get("verifiable", ""),

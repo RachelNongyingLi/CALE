@@ -7,6 +7,11 @@ comments below.
 
 Dataset item fields:
   id: optional string
+  dataset: optional string
+  dataset_role: optional primary_construction|robustness|domain_transfer|external_validation|demo
+  evaluation_setting: optional internal_constructed_evaluation|external_validation
+  domain: optional string
+  risk_level: optional low|medium|high
   user_prompt: string
   candidate_response: string
   false_premise: string
@@ -47,6 +52,10 @@ from perturbations import generate_perturbations
 
 
 LABELS = ["not_corrected", "uncertain", "partially_corrected", "corrected"]
+EXTERNAL_BENCHMARKS = {"AdversaRiskQA", "TruthTrap"}
+DOMAIN_TRANSFER_DATASETS = {"SciFact", "Climate-FEVER"}
+ROBUSTNESS_DATASETS = {"VitaminC"}
+PRIMARY_DATASETS = {"FEVER"}
 
 
 def status(message: str) -> None:
@@ -79,9 +88,9 @@ def load_dataset(path: str | None) -> list[dict[str, Any]]:
         return normalize_jsonl_rows(rows)
     data = json.loads(file_path.read_text(encoding="utf-8"))
     if isinstance(data, dict) and "examples" in data:
-        return data["examples"]
+        return [normalize_item_metadata(item) for item in data["examples"]]
     if isinstance(data, list):
-        return data
+        return [normalize_item_metadata(item) for item in data]
     raise ValueError("Dataset must be a JSON list, a JSON object with `examples`, or JSONL.")
 
 
@@ -105,7 +114,89 @@ def normalize_jsonl_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     first = rows[0]
     if {"claim", "label", "evidence"}.issubset(first):
         return [normalize_fever_row(row) for row in rows]
-    return rows
+    return [normalize_item_metadata(row) for row in rows]
+
+
+def canonical_dataset_name(name: str) -> str:
+    normalized = name.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    mapping = {
+        "fever": "FEVER",
+        "vitaminc": "VitaminC",
+        "scifact": "SciFact",
+        "climatefever": "Climate-FEVER",
+        "truthtrap": "TruthTrap",
+        "adversariskqa": "AdversaRiskQA",
+        "falseqa": "FalseQA",
+        "demo": "demo",
+    }
+    return mapping.get(normalized, name.strip())
+
+
+def infer_dataset_role(dataset: str) -> str:
+    if dataset in PRIMARY_DATASETS:
+        return "primary_construction"
+    if dataset in ROBUSTNESS_DATASETS:
+        return "robustness"
+    if dataset in DOMAIN_TRANSFER_DATASETS:
+        return "domain_transfer"
+    if dataset in EXTERNAL_BENCHMARKS:
+        return "external_validation"
+    if dataset == "demo":
+        return "demo"
+    return "unspecified"
+
+
+def infer_evaluation_setting(dataset: str, dataset_role: str) -> str:
+    if dataset in EXTERNAL_BENCHMARKS or dataset_role == "external_validation":
+        return "external_validation"
+    return "internal_constructed_evaluation"
+
+
+def infer_domain(dataset: str, item: dict[str, Any]) -> str:
+    if item.get("domain"):
+        return str(item["domain"])
+    mapping = {
+        "FEVER": "general",
+        "VitaminC": "general",
+        "SciFact": "science",
+        "Climate-FEVER": "climate",
+        "TruthTrap": "misleading_context",
+        "AdversaRiskQA": "high_risk",
+        "FalseQA": "general",
+        "demo": "general",
+    }
+    return mapping.get(dataset, "general")
+
+
+def infer_risk_level(dataset: str, item: dict[str, Any], domain: str) -> str:
+    if item.get("risk_level"):
+        return str(item["risk_level"])
+    if dataset == "AdversaRiskQA":
+        return "high"
+    if dataset in {"SciFact", "Climate-FEVER", "TruthTrap"} or domain in {"science", "climate", "high_risk"}:
+        return "medium"
+    return "low"
+
+
+def normalize_item_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    raw_dataset = str(normalized.get("dataset") or normalized.get("resource") or normalized.get("source_dataset") or "").strip()
+    dataset = canonical_dataset_name(raw_dataset) if raw_dataset else ""
+    if not dataset:
+        if normalized.get("reference_label"):
+            dataset = "FEVER"
+        else:
+            dataset = "demo"
+    dataset_role = str(normalized.get("dataset_role") or infer_dataset_role(dataset))
+    domain = infer_domain(dataset, normalized)
+    evaluation_setting = str(normalized.get("evaluation_setting") or infer_evaluation_setting(dataset, dataset_role))
+    risk_level = infer_risk_level(dataset, normalized, domain)
+    normalized["dataset"] = dataset
+    normalized["dataset_role"] = dataset_role
+    normalized["evaluation_setting"] = evaluation_setting
+    normalized["domain"] = domain
+    normalized["risk_level"] = risk_level
+    return normalized
 
 
 def normalize_fever_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -114,9 +205,13 @@ def normalize_fever_row(row: dict[str, Any]) -> dict[str, Any]:
     evidence = row.get("evidence", [])
     evidence_text = extract_available_evidence_text(evidence)
     supporting_evidence = evidence_text or json.dumps(evidence, ensure_ascii=False)
-    return {
+    normalized = {
         "id": str(row.get("id", "")),
         "dataset": "FEVER",
+        "dataset_role": "primary_construction",
+        "evaluation_setting": "internal_constructed_evaluation",
+        "domain": "general",
+        "risk_level": "low",
         "claim": claim,
         "base_claim": claim,
         "user_prompt": claim,
@@ -136,6 +231,7 @@ def normalize_fever_row(row: dict[str, Any]) -> dict[str, Any]:
             "requires_resistance": label == "REFUTES",
         },
     }
+    return normalize_item_metadata(normalized)
 
 
 def extract_available_evidence_text(evidence: Any) -> str:
@@ -169,8 +265,10 @@ def load_falseqa_csv(file_path: Path) -> list[dict[str, Any]]:
             question = row["question"].strip()
             answer = row["answer"].strip()
             rows.append(
-                {
+                normalize_item_metadata(
+                    {
                     "id": row.get("id") or f"{file_path.stem}_{idx}",
+                    "dataset": "FalseQA",
                     "user_prompt": question,
                     "adversarial_prompt": question,
                     "candidate_response": answer,
@@ -189,7 +287,8 @@ def load_falseqa_csv(file_path: Path) -> list[dict[str, Any]]:
                     },
                     "expert_label": "corrected" if label == 1 else "not_corrected",
                     "source_label": label,
-                }
+                    }
+                )
             )
     return rows
 
@@ -199,6 +298,11 @@ def built_in_dataset() -> list[dict[str, Any]]:
     positive.update(
         {
             "id": "great_wall_corrected",
+            "dataset": "demo",
+            "dataset_role": "demo",
+            "evaluation_setting": "internal_constructed_evaluation",
+            "domain": "general",
+            "risk_level": "low",
             "expert_label": "corrected",
             "expert_checklist": {
                 "Misinformation Detection": 1,
@@ -207,6 +311,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
                 "Error Rejection": 1,
                 "Correction Accuracy": 1,
                 "Evidence Grounding": 1,
+                "Source Faithfulness": 1,
                 "Hallucination Control": 1,
                 "Uncertainty Handling": 1,
             },
@@ -227,6 +332,11 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "reference_label": positive["reference_label"],
         "adversarial_prompt": positive["adversarial_prompt"],
         "attack_profile": positive["attack_profile"],
+        "dataset": "demo",
+        "dataset_role": "demo",
+        "evaluation_setting": "internal_constructed_evaluation",
+        "domain": "general",
+        "risk_level": "low",
         "expert_label": "not_corrected",
         "expert_checklist": {
             "Misinformation Detection": 0,
@@ -235,6 +345,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
             "Error Rejection": 0,
             "Correction Accuracy": 0,
             "Evidence Grounding": 0,
+            "Source Faithfulness": 0,
             "Hallucination Control": 1,
             "Uncertainty Handling": 1,
         },
@@ -254,6 +365,11 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "reference_label": positive["reference_label"],
         "adversarial_prompt": positive["adversarial_prompt"],
         "attack_profile": positive["attack_profile"],
+        "dataset": "demo",
+        "dataset_role": "demo",
+        "evaluation_setting": "internal_constructed_evaluation",
+        "domain": "general",
+        "risk_level": "low",
         "expert_label": "partially_corrected",
         "expert_checklist": {
             "Misinformation Detection": 1,
@@ -262,6 +378,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
             "Error Rejection": 1,
             "Correction Accuracy": 0,
             "Evidence Grounding": 0,
+            "Source Faithfulness": 0,
             "Hallucination Control": 1,
             "Uncertainty Handling": 1,
         },
@@ -291,6 +408,11 @@ def run_baseline(
         "uncertainty": 0.0,
         "subscores": {},
         "reference_label": item.get("reference_label"),
+        "dataset": item.get("dataset"),
+        "dataset_role": item.get("dataset_role"),
+        "evaluation_setting": item.get("evaluation_setting"),
+        "domain": item.get("domain"),
+        "risk_level": item.get("risk_level"),
         "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": run_to_json(run),
     }
@@ -328,6 +450,10 @@ def run_cale_variant(
             reference_label=example.reference_label,
             adversarial_prompt=example.adversarial_prompt,
             attack_profile={} if variant == "generic_cale" else example.attack_profile,
+            dataset=example.dataset,
+            evaluation_setting=example.evaluation_setting,
+            domain=example.domain,
+            risk_level=example.risk_level,
         )
         runs = [HeuristicJudge(strictness=0.0).evaluate(no_evidence, schema, 1)]
         output = aggregate_runs(runs)
@@ -342,6 +468,10 @@ def run_cale_variant(
             reference_label=example.reference_label,
             adversarial_prompt=example.adversarial_prompt,
             attack_profile=example.attack_profile if variant == "attack_aware_cale" else {},
+            dataset=example.dataset,
+            evaluation_setting=example.evaluation_setting,
+            domain=example.domain,
+            risk_level=example.risk_level,
         )
         runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
         output = aggregate_runs(runs)
@@ -356,6 +486,10 @@ def run_cale_variant(
             reference_label=example.reference_label,
             adversarial_prompt=example.adversarial_prompt,
             attack_profile=example.attack_profile,
+            dataset=example.dataset,
+            evaluation_setting=example.evaluation_setting,
+            domain=example.domain,
+            risk_level=example.risk_level,
         )
         if variant == "checklist_evidence_calibrated":
             runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
@@ -386,6 +520,11 @@ def run_cale_variant(
         "uncertainty": output.uncertainty,
         "subscores": output.dimension_subscores,
         "reference_label": item.get("reference_label"),
+        "dataset": item.get("dataset"),
+        "dataset_role": item.get("dataset_role"),
+        "evaluation_setting": item.get("evaluation_setting"),
+        "domain": item.get("domain"),
+        "risk_level": item.get("risk_level"),
         "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": to_jsonable(output),
     }
@@ -450,11 +589,24 @@ def item_to_example(item: dict[str, Any]) -> Example:
         reference_label=item.get("reference_label", ""),
         adversarial_prompt=item.get("adversarial_prompt", item.get("user_prompt", "")),
         attack_profile=item.get("attack_profile", {}),
+        dataset=item.get("dataset", ""),
+        evaluation_setting=item.get("evaluation_setting", ""),
+        domain=item.get("domain", ""),
+        risk_level=item.get("risk_level", ""),
+    )
+
+
+def row_identity(row: dict[str, Any]) -> tuple[str, str, str]:
+    row_id = str(row.get("id") or row.get("base_claim") or row.get("claim") or row.get("user_prompt") or "")
+    return (
+        str(row.get("dataset", "")),
+        str(row.get("evaluation_setting", "")),
+        row_id,
     )
 
 
 def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any]]) -> dict[str, Any]:
-    gold_by_id = {item.get("id", str(idx)): item for idx, item in enumerate(items)}
+    gold_by_id = {row_identity(item): item for item in items}
     grouped: dict[str, list[dict[str, Any]]] = {}
     for pred in predictions:
         grouped.setdefault(pred["variant"], []).append(pred)
@@ -467,9 +619,10 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
         uncertainties: list[float] = []
         misinformation_detection_scores: list[float] = []
         framing_resistance_scores: list[float] = []
+        source_faithfulness_scores: list[float] = []
         overclaim_failures: list[float] = []
         for idx, pred in enumerate(preds):
-            gold = gold_by_id.get(pred["id"], items[idx % len(items)])
+            gold = gold_by_id.get(row_identity(pred), items[idx % len(items)])
             if "expert_label" in gold:
                 y_true.append(gold["expert_label"])
                 y_pred.append(pred["label"])
@@ -481,6 +634,8 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
                     misinformation_detection_scores.append(float(pred["subscores"]["Misinformation Detection"]))
                 if "Framing Resistance" in pred["subscores"]:
                     framing_resistance_scores.append(float(pred["subscores"]["Framing Resistance"]))
+                if "Source Faithfulness" in pred["subscores"]:
+                    source_faithfulness_scores.append(float(pred["subscores"]["Source Faithfulness"]))
                 if gold.get("reference_label") == "NOT ENOUGH INFO":
                     overclaim_failures.append(
                         1.0 if pred["label"] in {"corrected", "partially_corrected"} else 0.0
@@ -498,11 +653,53 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
             "framing_resistance_rate": round(statistics.mean(framing_resistance_scores), 3)
             if framing_resistance_scores
             else None,
+            "source_faithfulness_rate": round(statistics.mean(source_faithfulness_scores), 3)
+            if source_faithfulness_scores
+            else None,
             "overclaim_rate_on_nei": round(statistics.mean(overclaim_failures), 3)
             if overclaim_failures
             else None,
         }
     return metrics
+
+
+def compute_metrics_by_metadata(
+    items: list[dict[str, Any]],
+    predictions: list[dict[str, Any]],
+    metadata_key: str,
+) -> dict[str, Any]:
+    values = sorted(
+        {
+            str(row.get(metadata_key, ""))
+            for row in items + predictions
+            if str(row.get(metadata_key, "")).strip()
+        }
+    )
+    grouped_metrics: dict[str, Any] = {}
+    for value in values:
+        subset_items = [item for item in items if str(item.get(metadata_key, "")) == value]
+        subset_item_ids = {row_identity(item) for item in subset_items}
+        subset_predictions = [pred for pred in predictions if row_identity(pred) in subset_item_ids]
+        if subset_items and subset_predictions:
+            grouped_metrics[value] = compute_metrics(subset_items, subset_predictions)
+    return grouped_metrics
+
+
+def summarize_items(items: list[dict[str, Any]]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "n_items": len(items),
+        "by_dataset": {},
+        "by_evaluation_setting": {},
+        "by_domain": {},
+        "by_risk_level": {},
+    }
+    for key in ("dataset", "evaluation_setting", "domain", "risk_level"):
+        bucket: dict[str, int] = {}
+        for item in items:
+            value = str(item.get(key, "unknown"))
+            bucket[value] = bucket.get(value, 0) + 1
+        summary[f"by_{key}"] = bucket
+    return summary
 
 
 def run_stress_tests(
@@ -526,6 +723,10 @@ def run_stress_tests(
                 {
                     "id": item.get("id", ""),
                     "model_name": item.get("model_name", "unknown"),
+                    "dataset": item.get("dataset"),
+                    "evaluation_setting": item.get("evaluation_setting"),
+                    "domain": item.get("domain"),
+                    "risk_level": item.get("risk_level"),
                     "variant": variant,
                     "perturbation": perturbed.perturbation,
                     "expected_invariance": perturbed.expected_invariance,
@@ -629,7 +830,10 @@ def main() -> None:
     parser.add_argument("--judge", choices=["heuristic", "openai"], default="heuristic")
     parser.add_argument("--model", help="Model name for an optional API judge.")
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--limit", type=int, help="Limit the number of loaded items for smoke tests.")
     parser.add_argument("--stress", action="store_true", help="Run perturbation stress tests.")
+    parser.add_argument("--summary-only", action="store_true", help="Omit raw predictions and stress rows from the final report.")
+    parser.add_argument("--output", help="Optional path for the JSON report. Defaults to stdout.")
     parser.add_argument(
         "--variants",
         nargs="*",
@@ -647,6 +851,8 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
+    if args.limit:
+        items = items[: args.limit]
     validate_items_for_experiment(items)
     status(f"Loaded {len(items)} items from {args.dataset or 'built-in dataset'}.")
     predictions: list[dict[str, Any]] = []
@@ -661,9 +867,15 @@ def main() -> None:
                 status(f"Completed evaluator runs: {format_progress(prediction_index, total_predictions)}")
 
     report: dict[str, Any] = {
+        "dataset_summary": summarize_items(items),
         "metrics": compute_metrics(items, predictions),
-        "predictions": predictions,
+        "metrics_by_setting": compute_metrics_by_metadata(items, predictions, "evaluation_setting"),
+        "metrics_by_dataset": compute_metrics_by_metadata(items, predictions, "dataset"),
+        "metrics_by_domain": compute_metrics_by_metadata(items, predictions, "domain"),
+        "metrics_by_risk_level": compute_metrics_by_metadata(items, predictions, "risk_level"),
     }
+    if not args.summary_only:
+        report["predictions"] = predictions
     if args.stress:
         status("Starting perturbation stress tests.")
         stress_tests = [
@@ -679,10 +891,18 @@ def main() -> None:
         ]
         status(f"Finished stress tests with {len(stress_tests)} perturbation results.")
         report["stress_summary"] = compute_stress_summary(stress_tests)
-        report["stress_tests"] = stress_tests
+        if not args.summary_only:
+            report["stress_tests"] = stress_tests
 
     status("Finished experiment run. Emitting final JSON report.")
-    print(json.dumps(report, indent=2 if args.pretty else None, ensure_ascii=False))
+    report_text = json.dumps(report, indent=2 if args.pretty else None, ensure_ascii=False)
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report_text, encoding="utf-8")
+        status(f"Wrote JSON report to {output_path}")
+    else:
+        print(report_text)
 
 
 if __name__ == "__main__":

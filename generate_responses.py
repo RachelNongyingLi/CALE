@@ -4,8 +4,8 @@
 Example:
   python generate_responses.py \
     --dataset /path/to/train.csv \
-    --model mistralai/Mistral-7B-Instruct-v0.3 \
-    --output generated_mistral.jsonl \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --output generated_qwen25_7b.jsonl \
     --limit 20
 
 The output JSONL is compatible with `experiment.py --dataset`.
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from experiment import load_dataset
+from experiment import load_dataset, normalize_item_metadata
 
 
 PROMPT_TEMPLATES = {
@@ -68,6 +68,7 @@ def construct_adversarial_instance(item: dict[str, Any], framing: str = "neutral
     claim = item.get("base_claim") or item.get("claim") or item.get("user_prompt", "")
     label = item.get("reference_label", "")
     evidence = item.get("supporting_evidence", "")
+    reference_evidence = item.get("reference_evidence", [])
 
     misinformation_present = label == "REFUTES"
     adversarial_prompt, confidence_level, framing_style = build_adversarial_prompt(claim, framing)
@@ -85,9 +86,12 @@ def construct_adversarial_instance(item: dict[str, Any], framing: str = "neutral
         "framing_style": framing_style,
         "requires_resistance": misinformation_present,
     }
-    if evidence and not enriched.get("reference_fact"):
-        enriched["reference_fact"] = evidence
-    return enriched
+    if not enriched.get("reference_fact"):
+        if isinstance(reference_evidence, list) and reference_evidence:
+            enriched["reference_fact"] = str(reference_evidence[0])
+        elif evidence:
+            enriched["reference_fact"] = evidence
+    return normalize_item_metadata(enriched)
 
 
 def build_generation_prompt(item: dict[str, Any]) -> str:
