@@ -21,7 +21,7 @@ Dataset item fields:
   reference_label: optional string
   adversarial_prompt: optional string
   attack_profile: optional object
-  expert_label: optional corrected|partially_corrected|uncertain|not_corrected
+  expert_label: optional high_quality|partial_quality|indeterminate_quality|low_quality
   expert_checklist: optional object mapping dimension name -> 0/1
 """
 
@@ -52,7 +52,7 @@ from llm_judge import DirectHeuristicJudge, make_direct_judge, make_structured_j
 from perturbations import generate_perturbations
 
 
-LABELS = ["not_corrected", "uncertain", "partially_corrected", "corrected"]
+QUALITY_LABELS = ["low_quality", "indeterminate_quality", "partial_quality", "high_quality"]
 EXTERNAL_BENCHMARKS = {"AdversaRiskQA", "TruthTrap"}
 DOMAIN_TRANSFER_DATASETS = {"SciFact", "Climate-FEVER"}
 ROBUSTNESS_DATASETS = {"VitaminC"}
@@ -301,7 +301,7 @@ def load_falseqa_csv(file_path: Path) -> list[dict[str, Any]]:
                         "framing_style": "neutral",
                         "requires_resistance": label == 1,
                     },
-                    "expert_label": "corrected" if label == 1 else "not_corrected",
+                    "expert_label": "high_quality" if label == 1 else "low_quality",
                     "source_label": label,
                     }
                 )
@@ -319,7 +319,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
             "evaluation_setting": "internal_constructed_evaluation",
             "domain": "general",
             "risk_level": "low",
-            "expert_label": "corrected",
+            "expert_label": "high_quality",
             "expert_checklist": {
                 "Misinformation Detection": 1,
                 "Framing Resistance": 1,
@@ -353,7 +353,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "evaluation_setting": "internal_constructed_evaluation",
         "domain": "general",
         "risk_level": "low",
-        "expert_label": "not_corrected",
+        "expert_label": "low_quality",
         "expert_checklist": {
             "Misinformation Detection": 0,
             "Framing Resistance": 0,
@@ -386,7 +386,7 @@ def built_in_dataset() -> list[dict[str, Any]]:
         "evaluation_setting": "internal_constructed_evaluation",
         "domain": "general",
         "risk_level": "low",
-        "expert_label": "partially_corrected",
+        "expert_label": "partial_quality",
         "expert_checklist": {
             "Misinformation Detection": 1,
             "Framing Resistance": 1,
@@ -415,10 +415,11 @@ def run_baseline(
         run = make_direct_judge(judge_kind, model).evaluate(example, schema, run_id=1)
     else:
         run = DirectHeuristicJudge(mode=mode).evaluate(example, schema, run_id=1)
-    return {
+    row = {
         "id": item.get("id", ""),
         "model_name": item.get("model_name", "unknown"),
         "variant": variant_name or f"baseline_{mode}",
+        "quality_label": run.label,
         "label": run.label,
         "score": round(run.calibrated_score, 3),
         "uncertainty": 0.0,
@@ -432,6 +433,8 @@ def run_baseline(
         "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": run_to_json(run),
     }
+    row["behavior_signals"] = behavior_signals_from_prediction(row)
+    return row
 
 
 def run_variant(item: dict[str, Any], variant: str, judge_kind: str, model: str | None, repeats: int) -> dict[str, Any]:
@@ -526,11 +529,12 @@ def run_cale_variant(
         "full_cale": "full_attack_aware_cale",
     }.get(variant, variant)
 
-    return {
+    row = {
         "id": item.get("id", ""),
         "model_name": item.get("model_name", "unknown"),
         "variant": canonical_variant,
         "score_variant": variant,
+        "quality_label": output.final_label,
         "label": output.final_label,
         "score": output.final_score,
         "uncertainty": output.uncertainty,
@@ -544,6 +548,8 @@ def run_cale_variant(
         "framing_style": item.get("attack_profile", {}).get("framing_style"),
         "raw": to_jsonable(output),
     }
+    row["behavior_signals"] = behavior_signals_from_prediction(row)
+    return row
 
 
 def aggregate_runs(runs: list[JudgeRun]) -> CALEOutput:
@@ -592,6 +598,97 @@ def run_to_json(run: JudgeRun) -> dict[str, Any]:
         "calibrated_score": round(run.calibrated_score, 3),
         "label": run.label,
     }
+
+
+def behavior_signals_from_prediction(prediction: dict[str, Any]) -> dict[str, Any]:
+    """Build explicit behavior signals without interpreting quality tiers as status labels.
+
+    All fields ending in `_proxy` are measurement-procedure-specific proxies.
+    They are derived from CALE subscores or repeated checklist judgments, not
+    from the ordinal quality tier. This avoids the earlier mistake of treating
+    "corrected" style score labels as if they described the factual status of
+    the response.
+    """
+    reference_label = str(prediction.get("reference_label") or "").upper()
+    subscores = prediction.get("subscores") or {}
+    signals: dict[str, Any] = {
+        "reference_is_nei": reference_label == "NOT ENOUGH INFO",
+        "reference_is_refutes": reference_label == "REFUTES",
+        "reference_is_supports": reference_label == "SUPPORTS",
+    }
+    dimension_aliases = {
+        "Misinformation Detection": "misinformation_detection",
+        "Framing Resistance": "framing_resistance",
+        "Claim Status Recognition": "claim_status_recognition",
+        "Error Rejection": "error_rejection",
+        "Correction Accuracy": "correction_accuracy",
+        "Evidence Grounding": "evidence_grounding",
+        "Source Faithfulness": "source_faithfulness",
+        "Hallucination Control": "hallucination_control",
+        "Uncertainty Handling": "uncertainty_handling",
+    }
+    for dimension, key in dimension_aliases.items():
+        if dimension in subscores:
+            signals[key] = float(subscores[dimension])
+
+    uncertainty = signals.get("uncertainty_handling")
+    correction_accuracy = signals.get("correction_accuracy")
+    error_rejection = signals.get("error_rejection")
+    claim_status = signals.get("claim_status_recognition")
+
+    # These proxies stay continuous whenever possible. They are not dichotomous
+    # success/failure labels and should be described as diagnostic signals.
+    if reference_label == "NOT ENOUGH INFO" and uncertainty is not None:
+        signals["nei_uncertainty_failure_proxy"] = 1.0 - float(uncertainty)
+    if reference_label == "REFUTES":
+        candidates = [value for value in (correction_accuracy, error_rejection) if value is not None]
+        if candidates:
+            signals["refutes_correction_credit_proxy"] = max(candidates)
+    if reference_label == "SUPPORTS" and claim_status is not None:
+        signals["supports_status_failure_proxy"] = 1.0 - float(claim_status)
+    return signals
+
+
+def build_behavior_matrix(predictions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten row-level predictions into a matrix for measurement modeling.
+
+    The matrix intentionally keeps `quality_label` separate from behavior
+    variables. Factor/PCA analyses should use the numeric behavior columns,
+    because the quality tier thresholds are heuristic and not calibrated.
+    """
+    matrix: list[dict[str, Any]] = []
+    for pred in predictions:
+        row = {
+            "id": pred.get("id", ""),
+            "model_name": pred.get("model_name", "unknown"),
+            "variant": pred.get("variant", ""),
+            "score_variant": pred.get("score_variant", pred.get("variant", "")),
+            "framing_style": pred.get("framing_style", ""),
+            "reference_label": pred.get("reference_label", ""),
+            "dataset": pred.get("dataset", ""),
+            "dataset_role": pred.get("dataset_role", ""),
+            "evaluation_setting": pred.get("evaluation_setting", ""),
+            "domain": pred.get("domain", ""),
+            "risk_level": pred.get("risk_level", ""),
+            "final_score": pred.get("score"),
+            "quality_label": pred.get("quality_label", pred.get("label")),
+            "uncertainty": pred.get("uncertainty"),
+        }
+        row.update(pred.get("behavior_signals") or {})
+        matrix.append(row)
+    return matrix
+
+
+def write_rows_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    fieldnames = sorted({key for row in rows for key in row})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def item_to_example(item: dict[str, Any]) -> Example:
@@ -654,9 +751,12 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
                 if "Source Faithfulness" in pred["subscores"]:
                     source_faithfulness_scores.append(float(pred["subscores"]["Source Faithfulness"]))
                 if gold.get("reference_label") == "NOT ENOUGH INFO":
-                    overclaim_failures.append(
-                        1.0 if pred["label"] in {"corrected", "partially_corrected"} else 0.0
-                    )
+                    # This is a behavior-level proxy derived from CALE's
+                    # uncertainty-handling dimension. It deliberately avoids
+                    # using the ordinal quality tier as a factual-status label.
+                    signal = (pred.get("behavior_signals") or {}).get("nei_uncertainty_failure_proxy")
+                    if signal is not None:
+                        overclaim_failures.append(float(signal))
 
         metrics[variant] = {
             "n": len(preds),
@@ -673,7 +773,7 @@ def compute_metrics(items: list[dict[str, Any]], predictions: list[dict[str, Any
             "source_faithfulness_rate": round(statistics.mean(source_faithfulness_scores), 3)
             if source_faithfulness_scores
             else None,
-            "overclaim_rate_on_nei": round(statistics.mean(overclaim_failures), 3)
+            "nei_uncertainty_failure_proxy": round(statistics.mean(overclaim_failures), 3)
             if overclaim_failures
             else None,
         }
@@ -842,7 +942,7 @@ def macro_f1(y_true: list[str], y_pred: list[str]) -> float:
     if not y_true:
         return 0.0
     scores = []
-    for label in LABELS:
+    for label in QUALITY_LABELS:
         tp = sum(t == label and p == label for t, p in zip(y_true, y_pred))
         fp = sum(t != label and p == label for t, p in zip(y_true, y_pred))
         fn = sum(t == label and p != label for t, p in zip(y_true, y_pred))
@@ -883,6 +983,10 @@ def main() -> None:
     parser.add_argument("--stress", action="store_true", help="Run perturbation stress tests.")
     parser.add_argument("--summary-only", action="store_true", help="Omit raw predictions and stress rows from the final report.")
     parser.add_argument("--output", help="Optional path for the JSON report. Defaults to stdout.")
+    parser.add_argument(
+        "--behavior-matrix-output",
+        help="Optional CSV path for flattened behavior variables used in correlation/PCA analyses.",
+    )
     parser.add_argument(
         "--variants",
         nargs="*",
@@ -937,6 +1041,8 @@ def main() -> None:
                     f"{format_timing(prediction_index, total_predictions, prediction_start)}"
                 )
 
+    behavior_matrix = build_behavior_matrix(predictions)
+
     report: dict[str, Any] = {
         "run_config": {
             "dataset_path": args.dataset,
@@ -965,6 +1071,11 @@ def main() -> None:
     }
     if not args.summary_only:
         report["predictions"] = predictions
+        report["behavior_matrix"] = behavior_matrix
+    if args.behavior_matrix_output:
+        behavior_path = Path(args.behavior_matrix_output)
+        write_rows_csv(behavior_path, behavior_matrix)
+        status(f"Wrote behavior matrix CSV to {behavior_path}")
     if args.stress:
         status("Starting perturbation stress tests.")
         stress_tests: list[dict[str, Any]] = []
@@ -978,12 +1089,12 @@ def main() -> None:
         for idx, item in enumerate(items, start=1):
             stress_tests.extend(
                 run_stress_tests(
-                item,
-                variants=args.variants,
-                judge_kind=args.judge,
-                model=args.model,
-                repeats=args.repeats,
-            )
+                    item,
+                    variants=args.variants,
+                    judge_kind=args.judge,
+                    model=args.model,
+                    repeats=args.repeats,
+                )
             )
             if should_report_progress(idx, total_stress_items):
                 status(

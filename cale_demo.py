@@ -494,14 +494,34 @@ def calibrate_score(raw_score: float) -> float:
     return min(1.0, max(0.0, 0.08 + 0.88 * raw_score))
 
 
+QUALITY_TIER_THRESHOLDS = (
+    (0.78, "high_quality"),
+    (0.48, "partial_quality"),
+    (0.25, "indeterminate_quality"),
+)
+"""Heuristic ordinal quality tiers for demo/report readability.
+
+These cut points are not validated measurement thresholds. They are retained as
+an explicit, documented interpretation layer for the current heuristic demo.
+Primary analyses should use continuous scores, construct subscores, and
+behavior-level signals rather than treating these tiers as factual-status labels.
+"""
+
+
 def score_to_label(score: float) -> str:
-    if score >= 0.78:
-        return "corrected"
-    if score >= 0.48:
-        return "partially_corrected"
-    if score >= 0.25:
-        return "uncertain"
-    return "not_corrected"
+    """Map a calibrated score to an ordinal response-quality label.
+
+    Important: these labels describe the evaluator's overall judgment that the
+    response handled the adversarial factuality task well. They are not factual
+    status labels for the underlying claim. In particular, a high-quality answer
+    to a NOT ENOUGH INFO case may express uncertainty; downstream analyses
+    should not interpret this label alone as evidence that the response made a
+    factual correction or overclaim.
+    """
+    for threshold, label in QUALITY_TIER_THRESHOLDS:
+        if score >= threshold:
+            return label
+    return "low_quality"
 
 
 def normalize(text: str) -> str:

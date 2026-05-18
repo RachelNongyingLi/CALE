@@ -21,6 +21,7 @@ SUMMARY_ONLY="${CALE_SUMMARY_ONLY:-0}"
 SKIP_GENERATION="${CALE_SKIP_GENERATION:-0}"
 RUN_TAG_PREFIX="${CALE_RUN_TAG_PREFIX:-fever_dev}"
 RESUME="${CALE_RESUME:-0}"
+EXPORT_BEHAVIOR_MATRIX="${CALE_EXPORT_BEHAVIOR_MATRIX:-1}"
 
 if [[ -n "${CALE_MODELS:-}" ]]; then
   MODELS="$CALE_MODELS"
@@ -80,6 +81,7 @@ Environment overrides:
   CALE_SKIP_GENERATION=1
   CALE_RUN_TAG_PREFIX=fever_dev
   CALE_RESUME=1
+  CALE_EXPORT_BEHAVIOR_MATRIX=1
 
 Notes:
   CALE_MODEL_PRESET is ignored when CALE_MODELS is set.
@@ -158,6 +160,7 @@ fi
 
 RESPONSES_PATH="${OUTPUT_DIR}/${RUN_TAG}.jsonl"
 REPORT_PATH="${OUTPUT_DIR}/${RUN_TAG}_${REPORT_KIND}_report.json"
+BEHAVIOR_MATRIX_PATH="${OUTPUT_DIR}/${RUN_TAG}_${REPORT_KIND}_behavior_matrix.csv"
 
 status "Project root: ${PROJECT_ROOT}"
 status "Dataset: ${DATASET}"
@@ -167,6 +170,9 @@ status "Run tag prefix: ${RUN_TAG_PREFIX}"
 status "Run mode: ${RUN_MODE} | framing=${FRAMING} | limit=${LIMIT} | batch_size=${BATCH_SIZE} | stress=${RUN_STRESS} | summary_only=${SUMMARY_ONLY} | skip_generation=${SKIP_GENERATION} | resume=${RESUME}"
 status "Response output: ${RESPONSES_PATH}"
 status "Report output: ${REPORT_PATH}"
+if [[ "$EXPORT_BEHAVIOR_MATRIX" == "1" ]]; then
+  status "Behavior matrix output: ${BEHAVIOR_MATRIX_PATH}"
+fi
 status "Visualization input should be the report JSON, not the responses JSONL."
 
 if [[ "$MODELS" == *"meta-llama/"* && -z "${HF_TOKEN:-}" ]]; then
@@ -218,6 +224,10 @@ EXP_ARGS=(
   --pretty
 )
 
+if [[ "$EXPORT_BEHAVIOR_MATRIX" == "1" ]]; then
+  EXP_ARGS+=(--behavior-matrix-output "$BEHAVIOR_MATRIX_PATH")
+fi
+
 if [[ "$RUN_MODE" == "smoke" ]]; then
   EXP_ARGS+=(--limit "$(( LIMIT * ${#MODEL_ARRAY[@]} ))")
 fi
@@ -237,5 +247,8 @@ status "Done."
 printf '\nGenerated files:\n'
 printf '  Responses JSONL: %s\n' "$RESPONSES_PATH"
 printf '  Report JSON:     %s\n' "$REPORT_PATH"
+if [[ "$EXPORT_BEHAVIOR_MATRIX" == "1" ]]; then
+  printf '  Behavior CSV:    %s\n' "$BEHAVIOR_MATRIX_PATH"
+fi
 printf '\nUse this in visualize_results.ipynb:\n'
 printf '  RESULTS_PATH = Path("%s")\n' "$REPORT_PATH"
