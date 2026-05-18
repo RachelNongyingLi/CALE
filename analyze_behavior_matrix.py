@@ -71,15 +71,39 @@ def zscore(df: pd.DataFrame) -> pd.DataFrame:
     return (df - means) / stds
 
 
-def run_pca(values: pd.DataFrame, n_components: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def prepare_pca_matrix(values: pd.DataFrame, max_missing_share: float) -> pd.DataFrame:
+    """Prepare behavior variables for PCA without requiring every row to be complete.
+
+    Baseline evaluator rows do not have CALE construct subscores, and
+    reference-label-specific proxies are only defined for the relevant subset of
+    cases. Requiring complete rows across all these columns would often discard
+    every row in a full behavior matrix. For exploratory PCA, we therefore drop
+    columns with too much missingness, then mean-impute the remaining missing
+    cells. The output files should still be interpreted as exploratory
+    measurement-procedure evidence, not as confirmatory factor analysis.
+    """
+    numeric = values.apply(pd.to_numeric, errors="coerce")
+    missing_share = numeric.isna().mean()
+    kept_columns = missing_share[missing_share <= max_missing_share].index.tolist()
+    numeric = numeric[kept_columns]
+    numeric = numeric.loc[:, numeric.nunique(dropna=True) > 1]
+    if numeric.empty:
+        raise ValueError(
+            "No numeric behavior columns remain for PCA after missingness/variance filtering. "
+            "Try a subset such as CALE-only rows, or increase --max-missing-share."
+        )
+    return numeric.fillna(numeric.mean(axis=0))
+
+
+def run_pca(values: pd.DataFrame, n_components: int, max_missing_share: float) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Compute PCA with SVD on z-scored behavior variables.
 
     Component signs are arbitrary in PCA. Interpret loadings by magnitude and
     pattern, not by assuming that a positive sign has intrinsic meaning.
     """
-    matrix = zscore(values).dropna(axis=0, how="any")
+    matrix = zscore(prepare_pca_matrix(values, max_missing_share))
     if matrix.empty:
-        raise ValueError("No complete rows are available for PCA after dropping missing values.")
+        raise ValueError("No rows are available for PCA after preprocessing.")
     u, singular_values, vt = np.linalg.svd(matrix.to_numpy(), full_matrices=False)
     max_components = min(n_components, vt.shape[0])
     components = vt[:max_components]
@@ -133,6 +157,15 @@ def main() -> None:
     parser.add_argument("--n-components", type=int, default=4)
     parser.add_argument("--include-final-score", action="store_true")
     parser.add_argument(
+        "--max-missing-share",
+        type=float,
+        default=0.5,
+        help=(
+            "Drop behavior columns whose missing share is above this value before PCA. "
+            "Remaining missing cells are mean-imputed. Default: 0.5."
+        ),
+    )
+    parser.add_argument(
         "--group-by",
         choices=["none", "framing_style", "variant"],
         default="none",
@@ -157,7 +190,7 @@ def main() -> None:
     corr.to_csv(output_dir / "behavior_correlation_matrix.csv")
     save_correlation_heatmap(corr, output_dir / "behavior_correlation_heatmap.png")
 
-    loadings, variance, score_df = run_pca(selected, args.n_components)
+    loadings, variance, score_df = run_pca(selected, args.n_components, args.max_missing_share)
     loadings.to_csv(output_dir / "behavior_pca_loadings.csv")
     variance.to_csv(output_dir / "behavior_pca_explained_variance.csv", index=False)
     score_df.to_csv(output_dir / "behavior_pca_scores.csv", index=True)
@@ -173,7 +206,7 @@ def main() -> None:
             group_corr.to_csv(group_dir / "behavior_correlation_matrix.csv")
             save_correlation_heatmap(group_corr, group_dir / "behavior_correlation_heatmap.png")
             try:
-                group_loadings, group_variance, _ = run_pca(group_selected, args.n_components)
+                group_loadings, group_variance, _ = run_pca(group_selected, args.n_components, args.max_missing_share)
             except ValueError:
                 continue
             group_loadings.to_csv(group_dir / "behavior_pca_loadings.csv")
