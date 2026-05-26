@@ -474,7 +474,11 @@ def run_cale_variant(
             domain=example.domain,
             risk_level=example.risk_level,
         )
-        runs = [HeuristicJudge(strictness=0.0).evaluate(no_evidence, schema, 1)]
+        if judge_kind == "heuristic":
+            runs = [HeuristicJudge(strictness=0.0).evaluate(no_evidence, schema, 1)]
+        else:
+            judge = make_structured_judge(judge_kind, model)
+            runs = [judge.evaluate(no_evidence, schema, idx + 1) for idx in range(repeats)]
         output = aggregate_runs(runs)
     elif variant in {"checklist_evidence", "attack_aware_cale"}:
         adapted = Example(
@@ -492,7 +496,11 @@ def run_cale_variant(
             domain=example.domain,
             risk_level=example.risk_level,
         )
-        runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
+        if judge_kind == "heuristic":
+            runs = [HeuristicJudge(strictness=0.0).evaluate(adapted, schema, 1)]
+        else:
+            judge = make_structured_judge(judge_kind, model)
+            runs = [judge.evaluate(adapted, schema, idx + 1) for idx in range(repeats)]
         output = aggregate_runs(runs)
     elif variant in {"checklist_evidence_calibrated", "full_attack_aware_cale", "full_cale"}:
         adapted = Example(
@@ -976,8 +984,14 @@ def mean_bool(values: Any) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CALE experiments.")
     parser.add_argument("--dataset", help="Path to JSON/JSONL dataset.")
-    parser.add_argument("--judge", choices=["heuristic", "openai"], default="heuristic")
-    parser.add_argument("--model", help="Model name for an optional API judge.")
+    parser.add_argument("--judge", choices=["heuristic", "openai", "hf"], default="heuristic")
+    parser.add_argument(
+        "--model",
+        help=(
+            "Model name for an optional strong evaluator. For --judge hf, this is "
+            "a Hugging Face causal-LM such as Qwen/Qwen2.5-7B-Instruct."
+        ),
+    )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--limit", type=int, help="Limit the number of loaded items for smoke tests.")
     parser.add_argument("--stress", action="store_true", help="Run perturbation stress tests.")

@@ -116,6 +116,30 @@ python run_target_specific_behavior_analysis.py \
 This creates parallel pooled, Qwen-only, and Llama-only behavior profiles and
 CALE-only PCA summaries. It is a CPU analysis step, not a generation step.
 
+### Optional Strong Evaluator
+
+The default experiment uses the heuristic judge so the full behavior matrix can
+be produced cheaply and reproducibly. To add a stronger open-weight evaluator,
+reuse the same target responses and switch only the evaluator backend:
+
+```bash
+python experiment.py \
+  --dataset outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl \
+  --judge hf \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --variants direct_llm_judge generic_cale attack_aware_cale full_attack_aware_cale \
+  --repeats 1 \
+  --limit 100 \
+  --output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_eval_report.json \
+  --behavior-matrix-output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_eval_behavior_matrix.csv \
+  --summary-only \
+  --pretty
+```
+
+Start with `--limit 100` because a strong evaluator performs a new generation
+for every evaluated row. If the smoke result is stable, increase the limit in
+stages. This is evaluator-side inference, not target-response generation.
+
 The Meta Llama model may require accepting the Hugging Face license and setting `HF_TOKEN`:
 
 ```bash
