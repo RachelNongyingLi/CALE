@@ -185,16 +185,7 @@ class OpenAIStructuredJudge:
         data = json.loads(response.output_text)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
         claim_evidence_table = normalize_claim_evidence_table(data.get("claim_evidence_table", []))
-        checklist = [
-            DimensionJudgment(
-                dimension=item["dimension"],
-                passed=bool(item["passed"]),
-                score=1.0 if item["passed"] else 0.0,
-                evidence=item.get("evidence", ""),
-                rationale=item.get("rationale", ""),
-            )
-            for item in data["checklist"]
-        ]
+        checklist = normalize_structured_checklist(data, schema)
         raw_score = weighted_score(schema.dimensions, checklist)
         calibrated_score = calibrate_score(raw_score)
         return JudgeRun(
@@ -234,18 +225,8 @@ class DeepSeekStructuredJudge(OpenAIStructuredJudge):
             return structured_parse_failure_run(example, schema, run_id, exc)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
         claim_evidence_table = normalize_claim_evidence_table(data.get("claim_evidence_table", []))
-        checklist = []
         try:
-            for item in data["checklist"]:
-                checklist.append(
-                    DimensionJudgment(
-                        dimension=str(item["dimension"]),
-                        passed=bool(item["passed"]),
-                        score=1.0 if item["passed"] else 0.0,
-                        evidence=str(item.get("evidence", "")),
-                        rationale=str(item.get("rationale", "")),
-                    )
-                )
+            checklist = normalize_structured_checklist(data, schema)
         except (KeyError, TypeError) as exc:
             return structured_parse_failure_run(example, schema, run_id, exc)
         raw_score = weighted_score(schema.dimensions, checklist)
@@ -425,6 +406,49 @@ def deepseek_chat_json(client: object, model: str, prompt: str, temperature: flo
     return extract_json_object(content)
 
 
+def canonical_dimension_name(name: object, schema: ConstructSchema) -> str:
+    """Map LLM-emitted dimension names back to exact schema names."""
+    emitted = str(name).strip()
+    schema_names = [dimension.name for dimension in schema.dimensions]
+    if emitted in schema_names:
+        return emitted
+
+    def key(value: str) -> str:
+        return "".join(char for char in value.lower() if char.isalnum())
+
+    by_key = {key(schema_name): schema_name for schema_name in schema_names}
+    normalized = key(emitted)
+    if normalized in by_key:
+        return by_key[normalized]
+    raise KeyError(f"Unknown checklist dimension: {emitted}")
+
+
+def normalize_structured_checklist(data: dict[str, object], schema: ConstructSchema) -> list[DimensionJudgment]:
+    """Normalize an LLM checklist to one judgment per schema dimension."""
+    raw_items = data.get("checklist")
+    if not isinstance(raw_items, list):
+        raise KeyError("checklist")
+
+    by_name: dict[str, DimensionJudgment] = {}
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        dimension_name = canonical_dimension_name(item.get("dimension", ""), schema)
+        passed = bool(item.get("passed", False))
+        by_name[dimension_name] = DimensionJudgment(
+            dimension=dimension_name,
+            passed=passed,
+            score=1.0 if passed else 0.0,
+            evidence=str(item.get("evidence", "")),
+            rationale=str(item.get("rationale", "")),
+        )
+
+    missing = [dimension.name for dimension in schema.dimensions if dimension.name not in by_name]
+    if missing:
+        raise KeyError(f"Missing checklist dimension(s): {missing}")
+    return [by_name[dimension.name] for dimension in schema.dimensions]
+
+
 def structured_parse_failure_run(example: Example, schema: ConstructSchema, run_id: int, error: Exception) -> JudgeRun:
     """Return a visible failed judge run instead of crashing the whole smoke run."""
     reason = f"HF judge did not return parseable structured JSON: {error}"
@@ -592,18 +616,8 @@ class HFStructuredJudge:
             return structured_parse_failure_run(example, schema, run_id, exc)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
         claim_evidence_table = normalize_claim_evidence_table(data.get("claim_evidence_table", []))
-        checklist = []
         try:
-            for item in data["checklist"]:
-                checklist.append(
-                    DimensionJudgment(
-                        dimension=str(item["dimension"]),
-                        passed=bool(item["passed"]),
-                        score=1.0 if item["passed"] else 0.0,
-                        evidence=str(item.get("evidence", "")),
-                        rationale=str(item.get("rationale", "")),
-                    )
-                )
+            checklist = normalize_structured_checklist(data, schema)
         except (KeyError, TypeError) as exc:
             return structured_parse_failure_run(example, schema, run_id, exc)
         raw_score = weighted_score(schema.dimensions, checklist)
