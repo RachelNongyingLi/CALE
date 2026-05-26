@@ -209,6 +209,24 @@ class OpenAIStructuredJudge:
         )
 
 
+class DeepSeekStructuredJudge(OpenAIStructuredJudge):
+    """Structured LLM judge using DeepSeek's OpenAI-compatible API.
+
+    Set DEEPSEEK_API_KEY before using:
+    `python experiment.py --judge deepseek --model deepseek-v4-pro`.
+    """
+
+    def __init__(self, model: str, temperature: float = 0.0) -> None:
+        from openai import OpenAI
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY is required for DeepSeekStructuredJudge.")
+        self.client = OpenAI(api_key=api_key, base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
+        self.model = model
+        self.temperature = temperature
+
+
 class OpenAIDirectJudge:
     """A non-CALE direct LLM judge baseline.
 
@@ -254,6 +272,20 @@ class OpenAIDirectJudge:
             calibrated_score=calibrated_score,
             label=score_to_label(calibrated_score),
         )
+
+
+class DeepSeekDirectJudge(OpenAIDirectJudge):
+    """Direct LLM judge using DeepSeek's OpenAI-compatible API."""
+
+    def __init__(self, model: str, temperature: float = 0.0) -> None:
+        from openai import OpenAI
+
+        api_key = os.environ.get("DEEPSEEK_API_KEY")
+        if not api_key:
+            raise RuntimeError("DEEPSEEK_API_KEY is required for DeepSeekDirectJudge.")
+        self.client = OpenAI(api_key=api_key, base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
+        self.model = model
+        self.temperature = temperature
 
 
 def extract_json_object(text: str) -> dict[str, object]:
@@ -742,6 +774,8 @@ def make_structured_judge(kind: str, model: str | None = None) -> StructuredJudg
         return HeuristicStructuredJudge()
     if kind == "openai":
         return OpenAIStructuredJudge(model=model or "gpt-4o-mini")
+    if kind == "deepseek":
+        return DeepSeekStructuredJudge(model=model or "deepseek-v4-pro")
     if kind == "hf":
         return HFStructuredJudge(model=model or "Qwen/Qwen2.5-7B-Instruct")
     raise ValueError(f"Unsupported structured judge kind: {kind}")
@@ -753,6 +787,8 @@ def make_direct_judge(kind: str, model: str | None = None) -> StructuredJudge:
         return DirectHeuristicJudge(mode="trustllm")
     if kind == "openai":
         return OpenAIDirectJudge(model=model or "gpt-4o-mini")
+    if kind == "deepseek":
+        return DeepSeekDirectJudge(model=model or "deepseek-v4-pro")
     if kind == "hf":
         return HFDirectJudge(model=model or "Qwen/Qwen2.5-7B-Instruct")
     raise ValueError(f"Unsupported direct judge kind: {kind}")

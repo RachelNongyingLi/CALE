@@ -984,12 +984,13 @@ def mean_bool(values: Any) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run CALE experiments.")
     parser.add_argument("--dataset", help="Path to JSON/JSONL dataset.")
-    parser.add_argument("--judge", choices=["heuristic", "openai", "hf"], default="heuristic")
+    parser.add_argument("--judge", choices=["heuristic", "openai", "deepseek", "hf"], default="heuristic")
     parser.add_argument(
         "--model",
         help=(
             "Model name for an optional strong evaluator. For --judge hf, this is "
-            "a Hugging Face causal-LM such as Qwen/Qwen2.5-7B-Instruct."
+            "a Hugging Face causal-LM such as Qwen/Qwen2.5-7B-Instruct. For "
+            "--judge deepseek, use an API model such as deepseek-v4-pro."
         ),
     )
     parser.add_argument("--repeats", type=int, default=5)
