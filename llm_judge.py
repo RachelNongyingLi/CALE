@@ -226,6 +226,41 @@ class DeepSeekStructuredJudge(OpenAIStructuredJudge):
         self.model = model
         self.temperature = temperature
 
+    def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
+        prompt = build_compact_structured_judge_prompt(example, schema)
+        try:
+            data = deepseek_chat_json(self.client, self.model, prompt, self.temperature)
+        except Exception as exc:
+            return structured_parse_failure_run(example, schema, run_id, exc)
+        attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
+        claim_evidence_table = normalize_claim_evidence_table(data.get("claim_evidence_table", []))
+        checklist = []
+        try:
+            for item in data["checklist"]:
+                checklist.append(
+                    DimensionJudgment(
+                        dimension=str(item["dimension"]),
+                        passed=bool(item["passed"]),
+                        score=1.0 if item["passed"] else 0.0,
+                        evidence=str(item.get("evidence", "")),
+                        rationale=str(item.get("rationale", "")),
+                    )
+                )
+        except (KeyError, TypeError) as exc:
+            return structured_parse_failure_run(example, schema, run_id, exc)
+        raw_score = weighted_score(schema.dimensions, checklist)
+        calibrated_score = calibrate_score(raw_score)
+        return JudgeRun(
+            run_id=run_id,
+            evaluation_plan=["DeepSeek compact structured CALE judge."],
+            attack_profile=attack_profile,
+            claim_evidence_table=claim_evidence_table,
+            checklist=checklist,
+            raw_score=raw_score,
+            calibrated_score=calibrated_score,
+            label=score_to_label(calibrated_score),
+        )
+
 
 class OpenAIDirectJudge:
     """A non-CALE direct LLM judge baseline.
@@ -287,6 +322,33 @@ class DeepSeekDirectJudge(OpenAIDirectJudge):
         self.model = model
         self.temperature = temperature
 
+    def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
+        prompt = build_direct_judge_prompt(example)
+        try:
+            data = deepseek_chat_json(self.client, self.model, prompt, self.temperature)
+            label = normalize_direct_label(str(data["label"]))
+        except Exception as exc:
+            return direct_parse_failure_run(example, run_id, exc)
+        raw_score = direct_label_to_score(label)
+        calibrated_score = calibrate_score(raw_score)
+        judgment = DimensionJudgment(
+            dimension="Direct LLM Judgment",
+            passed=label in {"corrected", "partially_corrected"},
+            score=calibrated_score,
+            evidence="",
+            rationale=str(data.get("rationale", "")),
+        )
+        return JudgeRun(
+            run_id=run_id,
+            evaluation_plan=["Direct DeepSeek judge without CALE components."],
+            attack_profile=example.attack_profile,
+            claim_evidence_table=[],
+            checklist=[judgment],
+            raw_score=raw_score,
+            calibrated_score=calibrated_score,
+            label=score_to_label(calibrated_score),
+        )
+
 
 def extract_json_object(text: str) -> dict[str, object]:
     """Extract the first JSON object from a model response.
@@ -341,6 +403,26 @@ def extract_json_object(text: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         raise ValueError("Judge response JSON must be an object.")
     return parsed
+
+
+def deepseek_chat_json(client: object, model: str, prompt: str, temperature: float) -> dict[str, object]:
+    """Call DeepSeek through its OpenAI-compatible chat completions endpoint."""
+    system_prompt = (
+        "You are a careful factuality evaluator. Return one valid JSON object only, "
+        "with double-quoted keys and values, no Markdown, and exactly the keys requested by the user."
+    )
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=temperature,
+        response_format={"type": "json_object"},
+    )
+    message = response.choices[0].message
+    content = message.content or ""
+    return extract_json_object(content)
 
 
 def structured_parse_failure_run(example: Example, schema: ConstructSchema, run_id: int, error: Exception) -> JudgeRun:
