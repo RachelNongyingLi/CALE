@@ -362,13 +362,11 @@ def direct_parse_failure_run(example: Example, run_id: int, error: Exception) ->
     )
 
 
-class HFJudgeMixin:
-    """Local Hugging Face causal-LM judge.
+class HFJudgeBackend:
+    """Shared local Hugging Face causal-LM backend.
 
-    This backend is intended for stronger open-weight evaluator models on the
-    server, such as Qwen2.5-7B-Instruct. It evaluates existing target responses;
-    it should not be confused with target-response generation. Use small limits
-    first because every evaluated row requires a new judge generation.
+    Direct and structured HF judges can share this object so a 7B evaluator is
+    loaded once per process instead of once per judge variant.
     """
 
     def __init__(self, model: str, temperature: float = 0.0) -> None:
@@ -378,7 +376,16 @@ class HFJudgeMixin:
         self.model_name = model
         self.temperature = temperature
         self.max_new_tokens = int(os.environ.get("CALE_JUDGE_MAX_NEW_TOKENS", "900"))
-        self.tokenizer = AutoTokenizer.from_pretrained(model, trust_remote_code=True)
+        hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_HUB_TOKEN")
+        tokenizer_kwargs = {"trust_remote_code": True}
+        model_kwargs = {
+            "device_map": os.environ.get("CALE_JUDGE_DEVICE_MAP", "auto"),
+            "trust_remote_code": True,
+        }
+        if hf_token:
+            tokenizer_kwargs["token"] = hf_token
+            model_kwargs["token"] = hf_token
+        self.tokenizer = AutoTokenizer.from_pretrained(model, **tokenizer_kwargs)
         dtype_name = os.environ.get("CALE_JUDGE_DTYPE", "auto").lower()
         dtype = {
             "float16": torch.float16,
@@ -389,11 +396,10 @@ class HFJudgeMixin:
             "fp32": torch.float32,
             "auto": "auto",
         }.get(dtype_name, "auto")
+        model_kwargs["torch_dtype"] = dtype
         self.model = AutoModelForCausalLM.from_pretrained(
             model,
-            torch_dtype=dtype,
-            device_map=os.environ.get("CALE_JUDGE_DEVICE_MAP", "auto"),
-            trust_remote_code=True,
+            **model_kwargs,
         )
         self.model.eval()
 
@@ -450,8 +456,16 @@ class HFJudgeMixin:
         raise ValueError(f"HF judge failed to produce valid JSON after {attempts} attempts: {last_error}")
 
 
-class HFStructuredJudge(HFJudgeMixin):
+@lru_cache(maxsize=4)
+def get_hf_judge_backend(model: str, temperature: float = 0.0) -> HFJudgeBackend:
+    return HFJudgeBackend(model=model, temperature=temperature)
+
+
+class HFStructuredJudge:
     """Structured CALE judge backed by a local Hugging Face instruct model."""
+
+    def __init__(self, model: str, temperature: float = 0.0) -> None:
+        self.backend = get_hf_judge_backend(model, temperature)
 
     def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
         if os.environ.get("CALE_JUDGE_FULL_PROMPT", "0") == "1":
@@ -459,7 +473,7 @@ class HFStructuredJudge(HFJudgeMixin):
         else:
             prompt = build_compact_structured_judge_prompt(example, schema)
         try:
-            data = self.generate_json(prompt)
+            data = self.backend.generate_json(prompt)
         except Exception as exc:
             return structured_parse_failure_run(example, schema, run_id, exc)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
@@ -492,13 +506,16 @@ class HFStructuredJudge(HFJudgeMixin):
         )
 
 
-class HFDirectJudge(HFJudgeMixin):
+class HFDirectJudge:
     """Direct holistic LLM judge backed by a local Hugging Face instruct model."""
+
+    def __init__(self, model: str, temperature: float = 0.0) -> None:
+        self.backend = get_hf_judge_backend(model, temperature)
 
     def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
         prompt = build_direct_judge_prompt(example)
         try:
-            data = self.generate_json(prompt)
+            data = self.backend.generate_json(prompt)
             label = normalize_direct_label(str(data["label"]))
         except Exception as exc:
             return direct_parse_failure_run(example, run_id, exc)
