@@ -2,6 +2,12 @@
 
 This folder contains the code for running CALE experiments on adversarial factuality correction.
 
+If you are resuming the broader thesis workspace, start with `../WORKSPACE_OVERVIEW.md`.
+
+If you are specifically continuing the code task, read `SERVER_WORKFLOW.md` first. The code is in this repository, but the main experiments and latest outputs often live on the server under `/thesis/CALE/outputs/`.
+
+Important Galvani policy: do not run Python, notebooks, IDE backends, Claude, `rsync`, long `tail -f` sessions, or automated polling loops on login nodes. Use login nodes only for short SSH entry, `sbatch`, `scancel`, and occasional one-shot status checks; computation and notebook work must run on compute nodes through Slurm.
+
 ## Files
 
 - `prepare_fever.py`: converts raw FEVER files into CALE-ready claim resources.
@@ -67,6 +73,48 @@ The default pipeline compares a Qwen-family model with a Llama-family model that
 Qwen/Qwen2.5-1.5B-Instruct
 meta-llama/Llama-3.2-1B-Instruct
 ```
+
+Before using an A100 for a full run, check whether the response JSONL already
+exists. Response generation is the only GPU-heavy stage; evaluation, behavior
+matrix export, visualization, and PCA/correlation analysis are CPU-friendly.
+
+Current reusable neutral full FEVER response file:
+
+```bash
+ls -lh outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+wc -l outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+```
+
+Expected rows:
+
+```text
+39996
+```
+
+If that file exists, skip generation and run:
+
+```bash
+python experiment.py \
+  --dataset outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl \
+  --output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json \
+  --behavior-matrix-output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv \
+  --summary-only \
+  --pretty
+```
+
+Use `--summary-only` for full runs because the row-level predictions and behavior
+matrix are large. The behavior matrix is already written separately as CSV.
+
+After the behavior matrix exists, run the target-specific robustness analysis:
+
+```bash
+python run_target_specific_behavior_analysis.py \
+  --input outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv \
+  --output-dir figures/behavior_target_specific_neutral_full
+```
+
+This creates parallel pooled, Qwen-only, and Llama-only behavior profiles and
+CALE-only PCA summaries. It is a CPU analysis step, not a generation step.
 
 The Meta Llama model may require accepting the Hugging Face license and setting `HF_TOKEN`:
 
