@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from functools import lru_cache
 from typing import Protocol
 
@@ -274,13 +275,91 @@ def extract_json_object(text: str) -> dict[str, object]:
         pass
 
     start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
+    if start == -1:
         raise ValueError(f"Could not find a JSON object in judge response: {text[:500]}")
+
+    depth = 0
+    in_string = False
+    escaped = False
+    end = -1
+    for idx in range(start, len(cleaned)):
+        char = cleaned[idx]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\":
+            escaped = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                end = idx
+                break
+    if end == -1:
+        raise ValueError(f"Could not find a balanced JSON object in judge response: {text[:500]}")
+
     parsed = json.loads(cleaned[start : end + 1])
     if not isinstance(parsed, dict):
         raise ValueError("Judge response JSON must be an object.")
     return parsed
+
+
+def structured_parse_failure_run(example: Example, schema: ConstructSchema, run_id: int, error: Exception) -> JudgeRun:
+    """Return a visible failed judge run instead of crashing the whole smoke run."""
+    reason = f"HF judge did not return parseable structured JSON: {error}"
+    checklist = [
+        DimensionJudgment(
+            dimension=dimension.name,
+            passed=False,
+            score=0.0,
+            evidence="",
+            rationale=reason,
+        )
+        for dimension in schema.dimensions
+    ]
+    raw_score = 0.0
+    calibrated_score = calibrate_score(raw_score)
+    return JudgeRun(
+        run_id=run_id,
+        evaluation_plan=[reason],
+        attack_profile=example.attack_profile,
+        claim_evidence_table=[],
+        checklist=checklist,
+        raw_score=raw_score,
+        calibrated_score=calibrated_score,
+        label=score_to_label(calibrated_score),
+    )
+
+
+def direct_parse_failure_run(example: Example, run_id: int, error: Exception) -> JudgeRun:
+    """Return an UNKNOWN direct judgment when a local LLM judge emits invalid JSON."""
+    reason = f"HF direct judge did not return parseable JSON: {error}"
+    raw_score = direct_label_to_score("unknown")
+    calibrated_score = calibrate_score(raw_score)
+    judgment = DimensionJudgment(
+        dimension="Direct LLM Judgment",
+        passed=False,
+        score=calibrated_score,
+        evidence="",
+        rationale=reason,
+    )
+    return JudgeRun(
+        run_id=run_id,
+        evaluation_plan=[reason],
+        attack_profile=example.attack_profile,
+        claim_evidence_table=[],
+        checklist=[judgment],
+        raw_score=raw_score,
+        calibrated_score=calibrated_score,
+        label=score_to_label(calibrated_score),
+    )
 
 
 class HFJudgeMixin:
@@ -318,13 +397,9 @@ class HFJudgeMixin:
         )
         self.model.eval()
 
-    def generate_json(self, prompt: str) -> dict[str, object]:
+    def _generate_text(self, prompt: str, system_prompt: str) -> str:
         import torch
 
-        system_prompt = (
-            "You are a careful factuality evaluator. Return valid JSON only, "
-            "with exactly the keys requested by the user."
-        )
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
@@ -345,8 +420,34 @@ class HFJudgeMixin:
         with torch.inference_mode():
             output_ids = self.model.generate(**inputs, **generation_kwargs)
         generated = output_ids[0, inputs["input_ids"].shape[-1] :]
-        text = self.tokenizer.decode(generated, skip_special_tokens=True)
-        return extract_json_object(text)
+        return self.tokenizer.decode(generated, skip_special_tokens=True)
+
+    def generate_json(self, prompt: str) -> dict[str, object]:
+        system_prompt = (
+            "You are a careful factuality evaluator. Return one valid JSON object only, "
+            "with double-quoted keys and values, no Markdown, and exactly the keys requested by the user."
+        )
+        attempts = max(1, int(os.environ.get("CALE_JUDGE_JSON_RETRIES", "2")))
+        text = ""
+        last_error: Exception | None = None
+        current_prompt = prompt
+        for attempt in range(attempts):
+            text = self._generate_text(current_prompt, system_prompt)
+            try:
+                return extract_json_object(text)
+            except (json.JSONDecodeError, ValueError) as exc:
+                last_error = exc
+                print(
+                    f"[llm_judge] Invalid JSON from {self.model_name} on attempt {attempt + 1}/{attempts}: {exc}",
+                    flush=True,
+                    file=sys.stderr,
+                )
+                current_prompt = (
+                    "Rewrite the following invalid evaluator output as one valid JSON object only. "
+                    "Do not add prose or Markdown. Preserve the intended keys and values where possible.\n\n"
+                    f"INVALID_OUTPUT:\n{text[:6000]}"
+                )
+        raise ValueError(f"HF judge failed to produce valid JSON after {attempts} attempts: {last_error}")
 
 
 class HFStructuredJudge(HFJudgeMixin):
@@ -354,20 +455,26 @@ class HFStructuredJudge(HFJudgeMixin):
 
     def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
         prompt = build_structured_judge_prompt(example, schema)
-        data = self.generate_json(prompt)
+        try:
+            data = self.generate_json(prompt)
+        except Exception as exc:
+            return structured_parse_failure_run(example, schema, run_id, exc)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
         claim_evidence_table = normalize_claim_evidence_table(data.get("claim_evidence_table", []))
         checklist = []
-        for item in data["checklist"]:
-            checklist.append(
-                DimensionJudgment(
-                    dimension=str(item["dimension"]),
-                    passed=bool(item["passed"]),
-                    score=1.0 if item["passed"] else 0.0,
-                    evidence=str(item.get("evidence", "")),
-                    rationale=str(item.get("rationale", "")),
+        try:
+            for item in data["checklist"]:
+                checklist.append(
+                    DimensionJudgment(
+                        dimension=str(item["dimension"]),
+                        passed=bool(item["passed"]),
+                        score=1.0 if item["passed"] else 0.0,
+                        evidence=str(item.get("evidence", "")),
+                        rationale=str(item.get("rationale", "")),
+                    )
                 )
-            )
+        except (KeyError, TypeError) as exc:
+            return structured_parse_failure_run(example, schema, run_id, exc)
         raw_score = weighted_score(schema.dimensions, checklist)
         calibrated_score = calibrate_score(raw_score)
         return JudgeRun(
@@ -387,8 +494,11 @@ class HFDirectJudge(HFJudgeMixin):
 
     def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
         prompt = build_direct_judge_prompt(example)
-        data = self.generate_json(prompt)
-        label = normalize_direct_label(str(data["label"]))
+        try:
+            data = self.generate_json(prompt)
+            label = normalize_direct_label(str(data["label"]))
+        except Exception as exc:
+            return direct_parse_failure_run(example, run_id, exc)
         raw_score = direct_label_to_score(label)
         calibrated_score = calibrate_score(raw_score)
         judgment = DimensionJudgment(
