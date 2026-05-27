@@ -70,6 +70,197 @@ Important scripts on the server:
 - `visualize_results.ipynb`
 - `visualize_fever_small_models.ipynb`
 
+## Current Output Handoff: May 26, 2026
+
+This is the current source-of-truth map for agents or collaborators continuing
+the experiment analysis.
+
+### Fixed Target Responses
+
+All evaluator-backend runs below evaluate the same fixed target responses:
+
+```text
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+```
+
+Expected rows:
+
+```text
+39996 = 19998 FEVER dev items x 2 target response models
+```
+
+Target response models:
+
+```text
+Qwen/Qwen2.5-1.5B-Instruct
+meta-llama/Llama-3.2-1B-Instruct
+```
+
+These rows are inputs, not evaluator results.
+
+### Main Heuristic Result
+
+Primary full behavior matrix:
+
+```text
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv
+```
+
+Expected rows:
+
+```text
+239976 = 39996 responses x 6 evaluator variants
+```
+
+Use this as the main result for CALE behavior profiles, PCA, and target-model
+dominance checks. The current target-specific PCA robustness summary is:
+
+```text
+pooled PC1-PC4 variance ~= 0.613
+Qwen-target-only ~= 0.624
+Llama-target-only ~= 0.611
+```
+
+This suggests the heuristic full PCA structure is not obviously dominated by
+one target response model.
+
+Target-specific outputs are under:
+
+```text
+figures/behavior_matrix_results/target_specific_robustness/
+```
+
+### Strong Evaluator Extension Jobs
+
+These are evaluator-backend robustness extensions. They do not generate new
+target responses.
+
+Qwen2.5-7B local HF evaluator:
+
+```text
+job name: cale-str / cale-strong-eval
+example job id in current run: 2582133
+log pattern: outputs/slurm/cale-strong-eval-<JOBID>.err
+output report:
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit1000_eval_report.json
+output behavior matrix:
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit1000_eval_behavior_matrix.csv
+```
+
+Expected behavior-matrix rows if complete:
+
+```text
+2000 rows + 1 header = 2001 CSV lines
+```
+
+DeepSeek V4-Pro API evaluator:
+
+```text
+job name: cale-ds-v4
+example job id in current run: 2582325
+log pattern: outputs/slurm/cale-ds-v4-<JOBID>.err
+output report:
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit1000_eval_report.json
+output behavior matrix:
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit1000_eval_behavior_matrix.csv
+```
+
+Expected behavior-matrix rows if complete:
+
+```text
+2000 rows + 1 header = 2001 CSV lines
+```
+
+DeepSeek uses the API and does not need GPU. Qwen2.5-7B uses local HF inference
+and should run on A100.
+
+### Progress And Error Checks
+
+Use the real job id, not the placeholder:
+
+```bash
+grep "Completed evaluator runs" outputs/slurm/cale-strong-eval-<JOBID>.err | tail -n 1
+grep "Completed evaluator runs" outputs/slurm/cale-ds-v4-<JOBID>.err | tail -n 1
+grep -i "Invalid JSON\|parseable\|failed to produce\|Traceback\|KeyError" outputs/slurm/cale-strong-eval-<JOBID>.err | tail
+grep -i "Invalid JSON\|parseable\|failed to produce\|Traceback\|KeyError" outputs/slurm/cale-ds-v4-<JOBID>.err | tail
+```
+
+After a job finishes, verify row counts:
+
+```bash
+wc -l outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit1000_eval_behavior_matrix.csv
+wc -l outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit1000_eval_behavior_matrix.csv
+```
+
+### Analysis Notebooks
+
+Main heuristic/target-specific analysis:
+
+```text
+behavior_matrix_results.ipynb
+```
+
+Strong evaluator backend analysis:
+
+```text
+strong_evaluator_results.ipynb
+```
+
+The strong evaluator notebook compares:
+
+```text
+heuristic full
+Qwen2.5-7B local evaluator subset
+DeepSeek V4-Pro API evaluator subset
+```
+
+It outputs combined backend tables, direct-vs-full-CALE comparisons, behavior
+profile heatmaps, PCA/top-loading summaries, and target-model dominance checks
+under:
+
+```text
+figures/strong_evaluator_results/
+```
+
+Core interpretation question:
+
+```text
+Does CALE's diagnostic structure remain visible across evaluator backends, and
+is that structure robust to Qwen-target-only vs Llama-target-only splits?
+```
+
+### Minimal Handoff Checklist For Future Agents
+
+When a future agent or notebook session resumes this project, preserve these
+outputs first:
+
+```text
+1. Fixed response input:
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+
+2. Main heuristic behavior matrix:
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv
+
+3. Target-specific robustness directory:
+   figures/behavior_matrix_results/target_specific_robustness/
+
+4. Qwen2.5-7B evaluator subset:
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit1000_eval_report.json
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit1000_eval_behavior_matrix.csv
+
+5. DeepSeek V4-Pro evaluator subset:
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit1000_eval_report.json
+   outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit1000_eval_behavior_matrix.csv
+
+6. Analysis notebooks:
+   behavior_matrix_results.ipynb
+   strong_evaluator_results.ipynb
+   cfa_behavior_model.ipynb
+```
+
+Do not treat strong-evaluator subsets as new target-model generations. They
+reuse the fixed response input and only change the evaluator backend.
+
 ## Required Workflow
 
 ### 1. Enter The Server Project
@@ -135,6 +326,11 @@ python experiment.py \
 Start with a small limit because strong-evaluator inference generates one judge
 response per evaluated row. Increase the limit only after checking runtime,
 JSON-parse stability, and output quality.
+If the model is gated or downloads are slow, set `HF_TOKEN` or
+`HUGGINGFACE_HUB_TOKEN` in the shell or sbatch script. The HF direct and
+structured judges share one cached model/tokenizer instance within the same
+process, so mixed strong-evaluator variants should not reload the 7B evaluator
+for every variant type.
 
 ### 3. Check Data Readiness
 

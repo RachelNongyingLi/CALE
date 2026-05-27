@@ -139,6 +139,30 @@ python experiment.py \
 Start with `--limit 100` because a strong evaluator performs a new generation
 for every evaluated row. If the smoke result is stable, increase the limit in
 stages. This is evaluator-side inference, not target-response generation.
+If the model is gated or downloads are slow, set `HF_TOKEN` or
+`HUGGINGFACE_HUB_TOKEN` in the shell or sbatch script. The local HF direct and
+structured judges share one cached model/tokenizer instance per process.
+
+For an API-based stronger evaluator, DeepSeek's OpenAI-compatible API can be
+used with `deepseek-v4-pro`:
+
+```bash
+export DEEPSEEK_API_KEY="your_deepseek_key"
+
+python experiment.py \
+  --dataset outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl \
+  --judge deepseek \
+  --model deepseek-v4-pro \
+  --variants direct_llm_judge full_attack_aware_cale \
+  --repeats 1 \
+  --limit 20 \
+  --output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit20_eval_report.json \
+  --behavior-matrix-output outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_deepseek_v4_pro_limit20_eval_behavior_matrix.csv \
+  --summary-only \
+  --pretty
+```
+
+Do not store `DEEPSEEK_API_KEY` in committed scripts.
 
 The Meta Llama model may require accepting the Hugging Face license and setting `HF_TOKEN`:
 
