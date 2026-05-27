@@ -42,6 +42,11 @@ class DirectHeuristicJudge:
     This class keeps the *single-pass, no-intermediate-artifact* assumption of
     a direct judge, but scores the response with an explicit holistic rubric
     closer in spirit to G-Eval / Prometheus than to keyword matching alone.
+
+    This is a rule-based evaluator backend. It does not call Qwen, Llama,
+    DeepSeek, OpenAI, or any other LLM. It is also not an average over target
+    models. Any Qwen/Llama pooling happens later in analysis tables when rows
+    from multiple target response models are grouped together.
     """
 
     correction_markers = HeuristicJudge.correction_markers
