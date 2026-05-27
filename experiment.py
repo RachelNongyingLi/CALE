@@ -995,6 +995,15 @@ def main() -> None:
     )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--limit", type=int, help="Limit the number of loaded items for smoke tests.")
+    parser.add_argument(
+        "--start-index",
+        type=int,
+        default=0,
+        help=(
+            "Skip the first N loaded items before applying --limit. This is useful "
+            "for chunked API-evaluator runs; it is item-based, not variant-based."
+        ),
+    )
     parser.add_argument("--stress", action="store_true", help="Run perturbation stress tests.")
     parser.add_argument("--summary-only", action="store_true", help="Omit raw predictions and stress rows from the final report.")
     parser.add_argument("--output", help="Optional path for the JSON report. Defaults to stdout.")
@@ -1019,6 +1028,10 @@ def main() -> None:
     args = parser.parse_args()
 
     items = load_dataset(args.dataset)
+    if args.start_index < 0:
+        raise ValueError("--start-index must be non-negative.")
+    if args.start_index:
+        items = items[args.start_index :]
     if args.limit:
         items = items[: args.limit]
     validate_items_for_experiment(items)
@@ -1064,6 +1077,7 @@ def main() -> None:
             "judge": args.judge,
             "judge_model": args.model or "heuristic/default",
             "repeats": args.repeats,
+            "start_index": args.start_index,
             "stress": args.stress,
             "summary_only": args.summary_only,
             "variants": args.variants,
