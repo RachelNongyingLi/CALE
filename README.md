@@ -8,6 +8,164 @@ If you are specifically continuing the code task, read `SERVER_WORKFLOW.md` firs
 
 Important Galvani policy: do not run Python, notebooks, IDE backends, Claude, `rsync`, long `tail -f` sessions, or automated polling loops on login nodes. Use login nodes only for short SSH entry, `sbatch`, `scancel`, and occasional one-shot status checks; computation and notebook work must run on compute nodes through Slurm.
 
+## Research Workflow
+
+CALE is not just a pipeline for producing one final score. The current project
+starts from a measurement problem: direct or aggregate evaluator scores can hide
+which evaluator behaviors are stable, which are brittle, and which are driven by
+irrelevant nuisance factors. CALE therefore exposes a high-dimensional behavior
+matrix first, then uses visualization, PCA/CFA-style analyses, and validity
+screening to decide which summaries are meaningful.
+
+### Execution Pipeline
+
+This is the concrete code path. The default reproducible route uses the
+rule-based scoring backend to create the full behavior matrix; Qwen2.5-7B and
+DeepSeek are optional evaluator-backend robustness extensions.
+
+```mermaid
+flowchart TD
+    A["1. Orient workspace<br/>local code vs server outputs"] --> B{"2. Prepared dataset exists?<br/>data/fever/prepared/dev_prepared.jsonl"}
+    B -- "No" --> C["Prepare FEVER resources<br/>prepare_fever.py or download_fever_data.sh"]
+    B -- "Yes" --> D{"3. Reusable target responses exist?<br/>fixed response JSONL"}
+    C --> D
+    D -- "No" --> E["Generate target responses<br/>generate_responses.py / run_pipeline.sh<br/>Qwen2.5-1.5B + Llama-3.2-1B"]
+    D -- "Yes" --> F["Run default evaluation<br/>experiment.py with heuristic/default backend"]
+    E --> F
+    F --> G["Export report + behavior matrix<br/>report JSON + behavior CSV"]
+    G --> H["Analyze behavior matrix<br/>correlation, PCA, behavior profiles"]
+    G --> I["Visualize matrix<br/>variant profiles, proxy heatmaps, missingness"]
+    H --> J["Target-specific robustness<br/>pooled vs Qwen-only vs Llama-only"]
+    J --> K{"Optional strong evaluator?<br/>backend robustness only"}
+    K -- "No" --> L["Interpret results<br/>measurement quality + capability summaries"]
+    K -- "Yes" --> M["Run matched evaluator subsets<br/>Qwen2.5-7B or DeepSeek<br/>start from small limits"]
+    M --> N["Backend comparison<br/>only on matched target subsets"]
+    N --> L
+```
+
+Key file distinctions:
+
+- `generate_responses.py` writes target-response JSONL files. These are inputs
+  to evaluation, not analysis reports.
+- `experiment.py` writes evaluation report JSON files and, with
+  `--behavior-matrix-output`, behavior matrix CSV files.
+- `analyze_behavior_matrix.py`, `visualize_behavior_matrix.py`,
+  `run_target_specific_behavior_analysis.py`, `strong_evaluator_results.ipynb`,
+  and `cfa_behavior_model.ipynb` consume behavior matrices or reports for
+  analysis.
+
+### Research Logic
+
+The analysis path has two linked but separate goals.
+
+```mermaid
+flowchart TD
+    A["Problem<br/>single final scores hide evaluator behavior"] --> B["CALE framework<br/>structured constructs + evaluator variants"]
+    B --> C["Large behavior matrix<br/>target response x evaluator variant x construct signal"]
+    C --> D["Exploratory structure<br/>correlations, PCA, target split robustness"]
+    C --> E["CFA-style measurement models<br/>one-factor vs multi-factor structures"]
+    D --> F["Goal 1: evaluator measurement quality<br/>does the evaluator behave like a coherent instrument?"]
+    E --> F
+    D --> G["Goal 2: compact LLM capability summaries<br/>can the matrix be reduced to fewer interpretable indicators?"]
+    F --> F1["Convergent validity<br/>construct-relevant signals should align"]
+    F --> F2["Discriminant validity<br/>constructs should not collapse into nuisance signals"]
+    G --> G1["Latent dimensions<br/>factual handling, adversarial resistance, boundary control"]
+    G --> G2["Target-model comparison<br/>summaries should remain interpretable across Qwen/Llama splits"]
+```
+
+The two goals should not be collapsed into one leaderboard:
+
+1. **Evaluator measurement quality.** This asks whether an evaluator backend or
+   CALE variant behaves psychometrically. Candidate evidence includes stable
+   factor structure, convergent validity with construct-relevant signals, and
+   discriminant validity against nuisance signals such as target identity,
+   reference label, domain, risk level, or framing style.
+2. **Target-model capability compression.** This asks whether the high-dimensional
+   behavior matrix can be reduced into a smaller set of interpretable indicators
+   for the evaluated LLMs. This is where PCA/CFA-style dimensions can become
+   compact capability summaries rather than a visually overloaded matrix.
+
+### Current Evidence Snapshot
+
+The current server-side source of truth is the fixed neutral FEVER response file:
+
+```text
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+```
+
+It contains `39,996` target responses: `19,998` FEVER dev items evaluated with
+two target models, `Qwen/Qwen2.5-1.5B-Instruct` and
+`meta-llama/Llama-3.2-1B-Instruct`.
+
+The main full behavior matrix is:
+
+```text
+outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv
+```
+
+It contains `239,976` rows: `39,996` target responses times six evaluator
+variants. This rule-based full run is currently the primary source for CALE
+family analysis because it covers both target models and the full ladder:
+
+```text
+baseline_binary
+baseline_likert
+direct_trustllm_heuristic
+generic_cale
+attack_aware_cale
+full_attack_aware_cale
+```
+
+Initial findings that are safe to state as preliminary evidence:
+
+- CALE is better understood as a behavior-matrix framework than as a single
+  final-score pipeline.
+- The full rule-based matrix supports target-specific robustness checks; current
+  PCA summaries are similar for pooled, Qwen-only, and Llama-only splits
+  (`PC1`-`PC4` cumulative variance is approximately `0.613`, `0.624`, and
+  `0.611`, respectively).
+- Direct holistic baselines and structured CALE variants answer different
+  questions: direct baselines produce one label/score, while CALE variants expose
+  construct-level diagnostics.
+- The strong evaluator runs with Qwen2.5-7B and DeepSeek are backend-robustness
+  extensions. They reuse the fixed target responses and should be interpreted
+  only on matched target subsets.
+- CFA-style and validity notebooks currently provide screening evidence for
+  internal structure, convergent validity, and discriminant validity; they should
+  not yet be described as final psychometric validation.
+
+### Terminology Guardrails
+
+Keep these three layers separate in README text, tables, and plots:
+
+- **Target model**: the model that generated `candidate_response`. Current
+  examples are `Qwen/Qwen2.5-1.5B-Instruct` and
+  `meta-llama/Llama-3.2-1B-Instruct`.
+- **Evaluator backend**: the implementation or model that scores a response,
+  selected by `experiment.py --judge` and `--model`. Current examples are
+  `heuristic/default`, `hf + Qwen/Qwen2.5-7B-Instruct`, and
+  `deepseek + deepseek-v4-pro`.
+- **Evaluator variant**: the scoring protocol selected by `--variants`, such as
+  `direct_llm_judge`, `direct_trustllm_heuristic`, `generic_cale`,
+  `attack_aware_cale`, or `full_attack_aware_cale`.
+
+Important non-goals and limitations:
+
+- The heuristic backend is a non-LLM rule-based scoring backend. It is not Qwen,
+  not Llama, and not an average of Qwen/Llama.
+- `full_attack_aware_cale` is an evaluator variant/protocol, not an evaluator
+  backend.
+- `direct` does not mean reference-free. It means a holistic single-label judge
+  with reference information but without CALE construct-level outputs.
+- Cross-backend absolute means are descriptive, not a calibrated leaderboard.
+- PCA components are exploratory; component signs are arbitrary and factor names
+  should be based on loading patterns.
+- Strong evaluator `limit1000` files are not pooled evidence unless matched Qwen
+  and Llama target subsets are both present.
+- These are currently validity-screening analyses, not final psychometric proof.
+  Stronger claims would require more matched evaluator-backend data,
+  human/expert criteria, and formal measurement-invariance checks.
+
 ## Files
 
 - `prepare_fever.py`: converts raw FEVER files into CALE-ready claim resources.
