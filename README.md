@@ -73,6 +73,13 @@ flowchart TD
     G --> G2["Target-model comparison<br/>summaries should remain interpretable across Qwen/Llama splits"]
 ```
 
+Measurement warning: **Higher score is not automatically better measurement
+quality; PCA variance is structure/concentration evidence, not leaderboard
+evidence.** A high mean score can reflect leniency, backend-specific scoring
+style, target-response difficulty, or construct collapse. Interpret scores only
+after checking the design coverage, construct profile, target split robustness,
+and backend agreement.
+
 The two goals should not be collapsed into one leaderboard:
 
 1. **Evaluator measurement quality.** This asks whether an evaluator backend or
@@ -84,6 +91,27 @@ The two goals should not be collapsed into one leaderboard:
    behavior matrix can be reduced into a smaller set of interpretable indicators
    for the evaluated LLMs. This is where PCA/CFA-style dimensions can become
    compact capability summaries rather than a visually overloaded matrix.
+
+The current notebook division follows this logic:
+
+- `strong_evaluator_results.ipynb` is the global evaluator audit notebook. It
+  should first clarify the three experimental layers: target models are the
+  models that generate answers, evaluator backends are the judges that score
+  answers, and evaluator variants/protocols are the scoring procedures. Its
+  results should be organized into Goal 1 evidence for measurement structure,
+  backend agreement, and target split robustness, then Goal 2 summaries for
+  compact target-model capability profiles.
+- `cfa_behavior_model.ipynb` is the CFA-style measurement notebook. Its key
+  output should include a claim-readiness table that marks internal structure
+  as preliminary support, convergent validity as screening evidence,
+  discriminant validity as requiring stronger nuisance tests, measurement
+  invariance as not fully established, and compact capability scoring as
+  exploratory.
+- The two paper-facing summary tables to produce next are
+  `measurement_quality_summary.csv` and `compact_capability_summary.csv`.
+  The first summarizes evaluator backend/protocol measurement evidence; the
+  second summarizes target-model construct profiles under a fixed evaluator
+  backend and CALE protocol.
 
 ### Current Evidence Snapshot
 
