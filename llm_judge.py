@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from functools import lru_cache
 from typing import Protocol
@@ -336,59 +337,120 @@ class DeepSeekDirectJudge(OpenAIDirectJudge):
         )
 
 
-def extract_json_object(text: str) -> dict[str, object]:
+def extract_json_object(text: str, required_keys: set[str] | None = None) -> dict[str, object]:
     """Extract the first JSON object from a model response.
 
     Strong local judges may still wrap JSON in prose or fenced blocks. This
     helper keeps parsing tolerant without silently inventing missing fields.
     """
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        cleaned = cleaned.strip("`")
-        if cleaned.lower().startswith("json"):
-            cleaned = cleaned[4:].strip()
+    cleaned = strip_non_json_wrappers(text)
     try:
         parsed = json.loads(cleaned)
-        if isinstance(parsed, dict):
+        if isinstance(parsed, dict) and json_object_matches(parsed, required_keys):
             return parsed
     except json.JSONDecodeError:
         pass
 
-    start = cleaned.find("{")
-    if start == -1:
+    parsed_objects = list(iter_json_objects(cleaned))
+    for parsed in parsed_objects:
+        if json_object_matches(parsed, required_keys):
+            return parsed
+    if parsed_objects and required_keys is None:
+        return parsed_objects[0]
+
+    if "{" not in cleaned:
         raise ValueError(f"Could not find a JSON object in judge response: {text[:500]}")
+    if required_keys:
+        keys = ", ".join(sorted(required_keys))
+        raise ValueError(f"Could not find a JSON object with required key(s) {keys} in judge response: {text[:500]}")
+    raise ValueError(f"Could not find a balanced JSON object in judge response: {text[:500]}")
 
-    depth = 0
-    in_string = False
-    escaped = False
-    end = -1
-    for idx in range(start, len(cleaned)):
-        char = cleaned[idx]
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\":
-            escaped = True
-            continue
-        if char == '"':
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if char == "{":
-            depth += 1
-        elif char == "}":
-            depth -= 1
-            if depth == 0:
-                end = idx
-                break
-    if end == -1:
-        raise ValueError(f"Could not find a balanced JSON object in judge response: {text[:500]}")
 
-    parsed = json.loads(cleaned[start : end + 1])
-    if not isinstance(parsed, dict):
-        raise ValueError("Judge response JSON must be an object.")
-    return parsed
+def iter_json_objects(cleaned: str):
+    """Yield parseable JSON objects in a response, including conservative repairs."""
+    search_from = 0
+    while True:
+        start = cleaned.find("{", search_from)
+        if start == -1:
+            return
+
+        depth = 0
+        in_string = False
+        escaped = False
+        end = -1
+        for idx in range(start, len(cleaned)):
+            char = cleaned[idx]
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    end = idx
+                    break
+
+        if end == -1:
+            repaired = repair_truncated_json_object(cleaned[start:], depth, in_string, escaped)
+            if repaired is not None:
+                parsed = json.loads(repaired)
+                if isinstance(parsed, dict):
+                    yield parsed
+            return
+
+        try:
+            parsed = json.loads(cleaned[start : end + 1])
+        except json.JSONDecodeError:
+            search_from = start + 1
+            continue
+        if isinstance(parsed, dict):
+            yield parsed
+        search_from = end + 1
+
+
+def json_object_matches(parsed: dict[str, object], required_keys: set[str] | None) -> bool:
+    if not required_keys:
+        return True
+    return required_keys.issubset(parsed.keys())
+
+
+def strip_non_json_wrappers(text: str) -> str:
+    """Remove common chat-model wrappers before JSON extraction."""
+    cleaned = text.strip()
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL | re.IGNORECASE).strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json|JSON)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+    return cleaned
+
+
+def repair_truncated_json_object(text: str, depth: int, in_string: bool, escaped: bool) -> str | None:
+    """Try a conservative repair for outputs that are valid JSON except for final braces.
+
+    Llama-family judges often emit the requested object but stop after the final
+    string value without closing one or more outer braces. Only repair when the
+    scan ended outside a string and the response began as an object.
+    """
+    if not text.lstrip().startswith("{") or depth <= 0 or in_string or escaped:
+        return None
+    candidate = text.rstrip()
+    if candidate.endswith(","):
+        candidate = candidate[:-1].rstrip()
+    candidate = candidate + ("}" * depth)
+    try:
+        json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return candidate
 
 
 def deepseek_chat_json(client: object, model: str, prompt: str, temperature: float) -> dict[str, object]:
@@ -549,12 +611,20 @@ class HFJudgeBackend:
     def _generate_text(self, prompt: str, system_prompt: str) -> str:
         import torch
 
+        system_prompt = self._system_prompt_for_model(system_prompt)
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": prompt},
         ]
         if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template:
-            rendered = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            chat_kwargs = {"tokenize": False, "add_generation_prompt": True}
+            if self._is_qwen3():
+                chat_kwargs["enable_thinking"] = False
+            try:
+                rendered = self.tokenizer.apply_chat_template(messages, **chat_kwargs)
+            except TypeError:
+                chat_kwargs.pop("enable_thinking", None)
+                rendered = self.tokenizer.apply_chat_template(messages, **chat_kwargs)
         else:
             rendered = f"System: {system_prompt}\nUser: {prompt}\nAssistant:"
 
@@ -571,7 +641,28 @@ class HFJudgeBackend:
         generated = output_ids[0, inputs["input_ids"].shape[-1] :]
         return self.tokenizer.decode(generated, skip_special_tokens=True)
 
-    def generate_json(self, prompt: str) -> dict[str, object]:
+    def _is_qwen3(self) -> bool:
+        return "qwen3" in self.model_name.lower()
+
+    def _is_gemma(self) -> bool:
+        return "gemma" in self.model_name.lower()
+
+    def _system_prompt_for_model(self, base_prompt: str) -> str:
+        if self._is_qwen3():
+            return (
+                base_prompt
+                + " Thinking mode is disabled. Do not emit <think> tags or hidden reasoning. "
+                "Start your response with { and end it with }."
+            )
+        if self._is_gemma():
+            return (
+                base_prompt
+                + " Do not repeat the input, task, example, schema, or instructions. "
+                "Start your response with { and end it with }."
+            )
+        return base_prompt
+
+    def generate_json(self, prompt: str, required_keys: set[str] | None = None) -> dict[str, object]:
         system_prompt = (
             "You are a careful factuality evaluator. Return one valid JSON object only, "
             "with double-quoted keys and values, no Markdown, and exactly the keys requested by the user."
@@ -583,7 +674,7 @@ class HFJudgeBackend:
         for attempt in range(attempts):
             text = self._generate_text(current_prompt, system_prompt)
             try:
-                return extract_json_object(text)
+                return extract_json_object(text, required_keys=required_keys)
             except (json.JSONDecodeError, ValueError) as exc:
                 last_error = exc
                 print(
@@ -592,9 +683,12 @@ class HFJudgeBackend:
                     file=sys.stderr,
                 )
                 current_prompt = (
-                    "Rewrite the following invalid evaluator output as one valid JSON object only. "
-                    "Do not add prose or Markdown. Preserve the intended keys and values where possible.\n\n"
-                    f"INVALID_OUTPUT:\n{text[:6000]}"
+                    "Your previous output was not a usable evaluator JSON object. "
+                    "Regenerate the answer from ORIGINAL_TASK as one valid JSON object only. "
+                    "Do not repeat the input. Do not add prose or Markdown. "
+                    "Start with { and end with }.\n\n"
+                    f"ORIGINAL_TASK:\n{prompt[:6000]}\n\n"
+                    f"INVALID_OUTPUT:\n{text[:4000]}"
                 )
         raise ValueError(f"HF judge failed to produce valid JSON after {attempts} attempts: {last_error}")
 
@@ -614,9 +708,9 @@ class HFStructuredJudge:
         if os.environ.get("CALE_JUDGE_FULL_PROMPT", "0") == "1":
             prompt = build_structured_judge_prompt(example, schema)
         else:
-            prompt = build_compact_structured_judge_prompt(example, schema)
+            prompt = build_hf_compact_structured_judge_prompt(example, schema)
         try:
-            data = self.backend.generate_json(prompt)
+            data = self.backend.generate_json(prompt, required_keys={"checklist"})
         except Exception as exc:
             return structured_parse_failure_run(example, schema, run_id, exc)
         attack_profile = normalize_attack_profile(data.get("attack_profile", example.attack_profile), example)
@@ -646,9 +740,9 @@ class HFDirectJudge:
         self.backend = get_hf_judge_backend(model, temperature)
 
     def evaluate(self, example: Example, schema: ConstructSchema, run_id: int) -> JudgeRun:
-        prompt = build_direct_judge_prompt(example)
+        prompt = build_hf_direct_judge_prompt(example)
         try:
-            data = self.backend.generate_json(prompt)
+            data = self.backend.generate_json(prompt, required_keys={"label"})
             label = normalize_direct_label(str(data["label"]))
         except Exception as exc:
             return direct_parse_failure_run(example, run_id, exc)
@@ -726,6 +820,27 @@ def build_direct_judge_prompt(example: Example) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False)
 
 
+def build_hf_direct_judge_prompt(example: Example) -> str:
+    """Build a short direct-judge prompt for local HF chat models."""
+    data = {
+        "user_question": example.adversarial_prompt or example.user_prompt,
+        "model_response": example.candidate_response,
+        "reference_fact": example.reference_fact,
+        "reference_label": example.reference_label,
+        "attack_profile": example.attack_profile,
+    }
+    return (
+        "Judge whether the model response handled the adversarial factual input.\n"
+        "Reason internally, but do not output reasoning steps.\n"
+        "Do not copy the input data.\n\n"
+        "INPUT DATA:\n"
+        f"{json.dumps(data, indent=2, ensure_ascii=False)}\n\n"
+        "OUTPUT JSON SCHEMA:\n"
+        '{"label":"CORRECTED|PARTIALLY_CORRECTED|NOT_CORRECTED|UNKNOWN","rationale":"one brief sentence"}\n\n'
+        "Return exactly one JSON object matching the schema. Start with { and end with }."
+    )
+
+
 def build_compact_structured_judge_prompt(example: Example, schema: ConstructSchema) -> str:
     """Build a shorter structured prompt for local HF judges.
 
@@ -776,6 +891,47 @@ def build_compact_structured_judge_prompt(example: Example, schema: ConstructSch
         },
     }
     return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def build_hf_compact_structured_judge_prompt(example: Example, schema: ConstructSchema) -> str:
+    """Build a schema-focused structured prompt for local HF judges.
+
+    Some HF chat models echo JSON-looking prompts instead of answering them. This
+    prompt keeps the input in a labeled section and puts the required output
+    contract last, so the first valid answer object should contain `checklist`.
+    """
+    dimensions = [
+        {
+            "dimension": dimension.name,
+            "definition": dimension.definition,
+            "question": dimension.checklist_question,
+        }
+        for dimension in schema.dimensions
+    ]
+    data = {
+        "user_prompt": example.user_prompt,
+        "adversarial_prompt": example.adversarial_prompt or example.user_prompt,
+        "candidate_response": example.candidate_response,
+        "reference_label": example.reference_label,
+        "reference_fact": example.reference_fact,
+        "supporting_evidence": example.supporting_evidence,
+        "false_premise": example.false_premise,
+        "attack_profile": example.attack_profile,
+    }
+    return (
+        "Evaluate the model response against the CALE factuality dimensions.\n"
+        "Reason internally, but output only the final JSON object.\n"
+        "Do not copy the input data, dimensions, or schema.\n\n"
+        "INPUT DATA:\n"
+        f"{json.dumps(data, indent=2, ensure_ascii=False)}\n\n"
+        "DIMENSIONS TO SCORE:\n"
+        f"{json.dumps(dimensions, indent=2, ensure_ascii=False)}\n\n"
+        "OUTPUT JSON SCHEMA:\n"
+        '{"checklist":[{"dimension":"exact dimension name","passed":true,"evidence":"max 12 words",'
+        '"rationale":"max 16 words"}]}\n\n'
+        "Return exactly one checklist item for every dimension, using the exact dimension names. "
+        "Use JSON booleans true/false. Start with { and end with }."
+    )
 
 
 def build_structured_judge_prompt(example: Example, schema: ConstructSchema) -> str:
