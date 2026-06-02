@@ -1,101 +1,0 @@
-[slurm] Job started at Wed May  6 23:32:05 CEST 2026
-[slurm] Running on galvani-cn201
-[slurm] CUDA devices: 0
-[small-all] Skipping train split by default: /mnt/lustre/home/kelava/koh927/thesis/CALE/data/fever/prepared/train_prepared.jsonl
-============================================================
-[small-all] CALE small-model batch run
-============================================================
-[small-all] Started: 2026-05-06 23:32:05
-[small-all] Project root: /mnt/lustre/home/kelava/koh927/thesis/CALE
-[small-all] Datasets found: 1
-[small-all] Model preset: open_small
-[small-all] Run mode: full
-[small-all] Framing: neutral
-[small-all] Output dir: outputs/small_models_all
-[small-all] Logs: outputs/small_models_all/logs
-[small-all] Stress summary after eval: 0
-[small-all] Dry run: 0
-============================================================
-============================================================
-[small-all] Dataset 1/1: fever_dev
-[small-all] Path: /mnt/lustre/home/kelava/koh927/thesis/CALE/data/fever/prepared/dev_prepared.jsonl
-[small-all] Rows: 19998
-[small-all] Eval log: outputs/small_models_all/logs/fever_dev_neutral_full_eval.log
-============================================================
-[cale-pipeline] Project root: /mnt/lustre/home/kelava/koh927/thesis/CALE
-[cale-pipeline] Dataset: /mnt/lustre/home/kelava/koh927/thesis/CALE/data/fever/prepared/dev_prepared.jsonl
-[cale-pipeline] Model preset: open_small
-[cale-pipeline] Models: Qwen/Qwen2.5-1.5B-Instruct meta-llama/Llama-3.2-1B-Instruct
-[cale-pipeline] Run tag prefix: fever_dev
-[cale-pipeline] Run mode: full | framing=neutral | limit=20 | batch_size=64 | stress=0 | summary_only=0 | skip_generation=0 | resume=1
-[cale-pipeline] Response output: outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-[cale-pipeline] Report output: outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json
-[cale-pipeline] Visualization input should be the report JSON, not the responses JSONL.
-[cale-pipeline] Generating model responses.
-[generate_responses] Loaded 19998 items from /mnt/lustre/home/kelava/koh927/thesis/CALE/data/fever/prepared/dev_prepared.jsonl
-[generate_responses] Prepared 19998 items with framing=neutral.
-[generate_responses] Resume enabled. Existing rows by model: {'Qwen/Qwen2.5-1.5B-Instruct': 9008}
-[generate_responses] Run configuration: models=['Qwen/Qwen2.5-1.5B-Instruct', 'meta-llama/Llama-3.2-1B-Instruct'] | framing=neutral | max_new_tokens=160 | temperature=0.0 | batch_size=64 | output=outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-[generate_responses] Expected output: JSONL with one row per input item per model, including `model_name` and `candidate_response`.
-[generate_responses] Expected rows: 39996
-[generate_responses] Starting generation for model Qwen/Qwen2.5-1.5B-Instruct
-[generate_responses] Resuming Qwen/Qwen2.5-1.5B-Instruct: skipping 9008 existing rows; generating 10990 remaining rows.
-[generate_responses] Runtime: model=Qwen/Qwen2.5-1.5B-Instruct | device_map=auto | cuda_available=True | mps_available=False | torch_dtype=float16
-[generate_responses] Visible CUDA devices: ['NVIDIA A100-PCIE-40GB']
-[generate_responses] Loaded tokenizer for Qwen/Qwen2.5-1.5B-Instruct.
-[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
-Loading weights:   0%|                                                                                                                                | 0/338 [00:00<?, ?it/s]Loading weights:   0%|▎                                                                                                                       | 1/338 [00:00<00:58,  5.75it/s]Loading weights:  26%|██████████████████████████████▎                                                                                       | 87/338 [00:00<00:00, 379.94it/s]Loading weights:  40%|██████████████████████████████████████████████▋                                                                      | 135/338 [00:00<00:00, 400.77it/s]Loading weights:  54%|███████████████████████████████████████████████████████████████▎                                                     | 183/338 [00:00<00:00, 420.44it/s]Loading weights:  68%|███████████████████████████████████████████████████████████████████████████████▎                                     | 229/338 [00:00<00:00, 419.44it/s]Loading weights:  83%|████████████████████████████████████████████████████████████████████████████████████████████████▌                    | 279/338 [00:00<00:00, 428.79it/s]Loading weights:  97%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████▏   | 327/338 [00:00<00:00, 437.00it/s]Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 338/338 [00:00<00:00, 407.33it/s]
-[generate_responses] Loaded model Qwen/Qwen2.5-1.5B-Instruct. Actual model device: cuda:0
-[generate_responses] Generation batch size for Qwen/Qwen2.5-1.5B-Instruct: 64
-[generate_responses] Generating responses for Qwen/Qwen2.5-1.5B-Instruct: 10990/10990 (100.0%) | elapsed=00:21:58 | eta=00:00:00 | rate=8.33 items/s
-[generate_responses] Wrote 10990 generated responses for Qwen/Qwen2.5-1.5B-Instruct to outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-[generate_responses] Starting generation for model meta-llama/Llama-3.2-1B-Instruct
-[generate_responses] Runtime: model=meta-llama/Llama-3.2-1B-Instruct | device_map=auto | cuda_available=True | mps_available=False | torch_dtype=float16
-[generate_responses] Visible CUDA devices: ['NVIDIA A100-PCIE-40GB']
-[generate_responses] Loaded tokenizer for meta-llama/Llama-3.2-1B-Instruct.
-Loading weights:   0%|                                                                                                                                | 0/146 [00:00<?, ?it/s]Loading weights:   1%|▊                                                                                                                       | 1/146 [00:00<00:33,  4.27it/s]Loading weights:  45%|█████████████████████████████████████████████████████▎                                                                | 66/146 [00:00<00:00, 236.93it/s]Loading weights:  68%|████████████████████████████████████████████████████████████████████████████████▏                                    | 100/146 [00:00<00:00, 268.89it/s]Loading weights:  92%|███████████████████████████████████████████████████████████████████████████████████████████████████████████▍         | 134/146 [00:00<00:00, 266.00it/s]Loading weights: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 146/146 [00:00<00:00, 245.67it/s]
-[generate_responses] Loaded model meta-llama/Llama-3.2-1B-Instruct. Actual model device: cuda:0
-[generate_responses] Generation batch size for meta-llama/Llama-3.2-1B-Instruct: 64
-[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.
-[generate_responses] Generating responses for meta-llama/Llama-3.2-1B-Instruct: 8000/19998 (40.0%) | elapsed=00:12:44 | eta=00:19:06 | rate=10.46 items/s
-[generate_responses] Generating responses for meta-llama/Llama-3.2-1B-Instruct: 19998/19998 (100.0%) | elapsed=00:31:35 | eta=00:00:00 | rate=10.55 items/s
-[generate_responses] Wrote 19998 generated responses for meta-llama/Llama-3.2-1B-Instruct to outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-[generate_responses] Finished writing 30988 new generated responses to outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-[cale-pipeline] Generated rows: 39996
-[cale-pipeline] Running CALE experiment.
-[experiment] Loaded 39996 items from outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl.
-[experiment] Run configuration: judge=heuristic | judge_model=heuristic/default | repeats=5 | stress=False | summary_only=False | output=outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json
-[experiment] Variants: ['baseline_binary', 'baseline_likert', 'direct_trustllm_heuristic', 'generic_cale', 'attack_aware_cale', 'full_attack_aware_cale']
-[experiment] Dataset summary: dataset=(FEVER=39996) | setting=(internal_constructed_evaluation=39996) | domain=(general=39996) | risk=(low=39996) | model=(Qwen/Qwen2.5-1.5B-Instruct=19998, meta-llama/Llama-3.2-1B-Instruct=19998)
-[experiment] Expected output: JSON report with `dataset_summary`, grouped metrics, and optional `stress_summary`; raw rows are omitted when --summary-only is set.
-[experiment] Running 6 evaluator variants over 39996 items.
-[experiment] Completed evaluator runs: 1/239976 (0.0%) | elapsed=00:00:00 | eta=00:11:42 | rate=341.75 items/s
-[experiment] Completed evaluator runs: 23998/239976 (10.0%) | elapsed=00:00:25 | eta=00:03:45 | rate=958.46 items/s
-[experiment] Completed evaluator runs: 47996/239976 (20.0%) | elapsed=00:00:50 | eta=00:03:21 | rate=951.93 items/s
-[experiment] Completed evaluator runs: 71993/239976 (30.0%) | elapsed=00:01:16 | eta=00:02:57 | rate=946.43 items/s
-[experiment] Completed evaluator runs: 95991/239976 (40.0%) | elapsed=00:01:41 | eta=00:02:32 | rate=945.48 items/s
-[experiment] Completed evaluator runs: 119988/239976 (50.0%) | elapsed=00:02:07 | eta=00:02:07 | rate=943.04 items/s
-[experiment] Completed evaluator runs: 143986/239976 (60.0%) | elapsed=00:02:31 | eta=00:01:40 | rate=951.10 items/s
-[experiment] Completed evaluator runs: 167984/239976 (70.0%) | elapsed=00:02:55 | eta=00:01:15 | rate=958.76 items/s
-[experiment] Completed evaluator runs: 191981/239976 (80.0%) | elapsed=00:03:18 | eta=00:00:49 | rate=966.32 items/s
-[experiment] Completed evaluator runs: 215979/239976 (90.0%) | elapsed=00:03:43 | eta=00:00:24 | rate=967.78 items/s
-[experiment] Completed evaluator runs: 239976/239976 (100.0%) | elapsed=00:04:06 | eta=00:00:00 | rate=973.31 items/s
-[experiment] Finished experiment run. Emitting final JSON report.
-[experiment] Wrote JSON report to outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json
-[cale-pipeline] Done.
-
-Generated files:
-  Responses JSONL: outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
-  Report JSON:     outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json
-
-Use this in visualize_results.ipynb:
-  RESULTS_PATH = Path("outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json")
-[small-all] Eval completed for fever_dev in 3564s.
-============================================================
-[small-all] Batch finished in 3564s.
-[small-all] Completed datasets: 1
-  [ok] fever_dev
-[small-all] All requested datasets completed.
-[small-all] Reports are under: outputs/small_models_all
-============================================================
-[slurm] Job finished at Thu May  7 00:31:29 CEST 2026
