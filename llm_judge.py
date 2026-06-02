@@ -640,12 +640,24 @@ class HFJudgeBackend:
             rendered = f"System: {system_prompt}\nUser: {prompt}\nAssistant:"
 
         inputs = self.tokenizer(rendered, return_tensors="pt").to(self.model.device)
+        pad_token_id = self.tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self.tokenizer.eos_token_id
+        eos_token_id = self.tokenizer.eos_token_id
         generation_kwargs = {
             "max_new_tokens": self.max_new_tokens,
             "do_sample": self.temperature > 0,
             "temperature": self.temperature if self.temperature > 0 else None,
-            "pad_token_id": self.tokenizer.eos_token_id,
+            "pad_token_id": pad_token_id,
+            "eos_token_id": eos_token_id,
         }
+        if (
+            pad_token_id is not None
+            and eos_token_id is not None
+            and pad_token_id != eos_token_id
+            and os.environ.get("CALE_JUDGE_SUPPRESS_PAD_TOKEN", "1") == "1"
+        ):
+            generation_kwargs["bad_words_ids"] = [[pad_token_id]]
         min_new_tokens = int(os.environ.get("CALE_JUDGE_MIN_NEW_TOKENS", "0"))
         if min_new_tokens > 0:
             generation_kwargs["min_new_tokens"] = min_new_tokens
