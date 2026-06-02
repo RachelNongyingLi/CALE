@@ -612,11 +612,22 @@ class HFJudgeBackend:
         import torch
 
         system_prompt = self._system_prompt_for_model(system_prompt)
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ]
-        if hasattr(self.tokenizer, "apply_chat_template") and self.tokenizer.chat_template:
+        if self._is_gemma():
+            # Gemma chat templates are more reliable when the instruction is a
+            # single user turn. Some Gemma variants immediately emit EOS for a
+            # system+user template, which decodes to an empty judge response.
+            messages = [{"role": "user", "content": f"{system_prompt}\n\n{prompt}"}]
+        else:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ]
+        use_chat_template = (
+            hasattr(self.tokenizer, "apply_chat_template")
+            and self.tokenizer.chat_template
+            and os.environ.get("CALE_JUDGE_DISABLE_CHAT_TEMPLATE", "0") != "1"
+        )
+        if use_chat_template:
             chat_kwargs = {"tokenize": False, "add_generation_prompt": True}
             if self._is_qwen3():
                 chat_kwargs["enable_thinking"] = False
@@ -635,11 +646,23 @@ class HFJudgeBackend:
             "temperature": self.temperature if self.temperature > 0 else None,
             "pad_token_id": self.tokenizer.eos_token_id,
         }
+        min_new_tokens = int(os.environ.get("CALE_JUDGE_MIN_NEW_TOKENS", "0"))
+        if min_new_tokens > 0:
+            generation_kwargs["min_new_tokens"] = min_new_tokens
         generation_kwargs = {key: value for key, value in generation_kwargs.items() if value is not None}
         with torch.inference_mode():
             output_ids = self.model.generate(**inputs, **generation_kwargs)
         generated = output_ids[0, inputs["input_ids"].shape[-1] :]
-        return self.tokenizer.decode(generated, skip_special_tokens=True)
+        text = self.tokenizer.decode(generated, skip_special_tokens=True)
+        if not text.strip() and os.environ.get("CALE_JUDGE_DEBUG_EMPTY", "0") == "1":
+            raw_text = self.tokenizer.decode(generated, skip_special_tokens=False)
+            print(
+                f"[llm_judge] Empty decoded output from {self.model_name}; "
+                f"raw generated tokens={generated[:32].detach().cpu().tolist()} raw_text={raw_text[:500]!r}",
+                flush=True,
+                file=sys.stderr,
+            )
+        return text
 
     def _is_qwen3(self) -> bool:
         return "qwen3" in self.model_name.lower()

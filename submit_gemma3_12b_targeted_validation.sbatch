@@ -23,5 +23,7 @@ set -euo pipefail
 
 export CALE_HF_JUDGE_MODEL="google/gemma-3-12b-it"
 export CALE_HF_JUDGE_TAG="gemma3_12b"
+export CALE_JUDGE_MIN_NEW_TOKENS="${CALE_JUDGE_MIN_NEW_TOKENS:-8}"
+export CALE_JUDGE_DEBUG_EMPTY="${CALE_JUDGE_DEBUG_EMPTY:-1}"
 
 bash submit_hf_targeted_validation.sbatch
