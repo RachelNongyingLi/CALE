@@ -20,5 +20,9 @@ set -euo pipefail
 
 export CALE_HF_JUDGE_MODEL="Qwen/Qwen2.5-7B-Instruct"
 export CALE_HF_JUDGE_TAG="qwen25_7b"
+export CALE_JUDGE_DTYPE="${CALE_JUDGE_DTYPE:-bfloat16}"
+export CALE_JUDGE_MAX_NEW_TOKENS="${CALE_JUDGE_MAX_NEW_TOKENS:-1800}"
+export CALE_JUDGE_JSON_RETRIES="${CALE_JUDGE_JSON_RETRIES:-3}"
+export CALE_JUDGE_DEVICE_MAP="${CALE_JUDGE_DEVICE_MAP:-auto}"
 
 bash submit_hf_targeted_validation.sbatch

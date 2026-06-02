@@ -374,7 +374,7 @@ def iter_json_objects(cleaned: str):
         if start == -1:
             return
 
-        depth = 0
+        stack: list[str] = []
         in_string = False
         escaped = False
         end = -1
@@ -392,15 +392,19 @@ def iter_json_objects(cleaned: str):
             if in_string:
                 continue
             if char == "{":
-                depth += 1
-            elif char == "}":
-                depth -= 1
-                if depth == 0:
+                stack.append("}")
+            elif char == "[":
+                stack.append("]")
+            elif char in {"}", "]"}:
+                if not stack or char != stack[-1]:
+                    break
+                stack.pop()
+                if not stack:
                     end = idx
                     break
 
         if end == -1:
-            repaired = repair_truncated_json_object(cleaned[start:], depth, in_string, escaped)
+            repaired = repair_truncated_json_object(cleaned[start:], stack, in_string, escaped)
             if repaired is not None:
                 parsed = json.loads(repaired)
                 if isinstance(parsed, dict):
@@ -433,19 +437,19 @@ def strip_non_json_wrappers(text: str) -> str:
     return cleaned
 
 
-def repair_truncated_json_object(text: str, depth: int, in_string: bool, escaped: bool) -> str | None:
-    """Try a conservative repair for outputs that are valid JSON except for final braces.
+def repair_truncated_json_object(text: str, stack: list[str], in_string: bool, escaped: bool) -> str | None:
+    """Try a conservative repair for outputs missing final list/object closers.
 
-    Llama-family judges often emit the requested object but stop after the final
-    string value without closing one or more outer braces. Only repair when the
-    scan ended outside a string and the response began as an object.
+    Local judges often emit the requested object but stop after the final string
+    value without closing the checklist list and outer object. Only repair when
+    the scan ended outside a string, and never invent fields or values.
     """
-    if not text.lstrip().startswith("{") or depth <= 0 or in_string or escaped:
+    if not text.lstrip().startswith("{") or not stack or in_string or escaped:
         return None
     candidate = text.rstrip()
     if candidate.endswith(","):
         candidate = candidate[:-1].rstrip()
-    candidate = candidate + ("}" * depth)
+    candidate = candidate + "".join(reversed(stack))
     try:
         json.loads(candidate)
     except json.JSONDecodeError:
