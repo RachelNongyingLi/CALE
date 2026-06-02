@@ -1,0 +1,442 @@
+{
+  "run_config": {
+    "dataset_path": "outputs/subsets/boundary_control_stress_handcrafted.jsonl",
+    "judge": "heuristic",
+    "judge_model": "heuristic/default",
+    "repeats": 5,
+    "start_index": 0,
+    "stress": false,
+    "summary_only": true,
+    "variants": [
+      "generic_cale",
+      "attack_aware_cale",
+      "full_attack_aware_cale"
+    ],
+    "target_models": [
+      "hand_authored_boundary_target_a",
+      "hand_authored_boundary_target_b"
+    ]
+  },
+  "dataset_summary": {
+    "n_items": 100,
+    "by_dataset": {
+      "BoundaryStress": 100
+    },
+    "by_dataset_role": {
+      "robustness": 100
+    },
+    "by_evaluation_setting": {
+      "internal_constructed_evaluation": 100
+    },
+    "by_domain": {
+      "science": 40,
+      "education": 20,
+      "health": 20,
+      "public_policy": 20
+    },
+    "by_risk_level": {
+      "high": 100
+    },
+    "by_model_name": {
+      "hand_authored_boundary_target_a": 50,
+      "hand_authored_boundary_target_b": 50
+    }
+  },
+  "metrics": {
+    "generic_cale": {
+      "n": 100,
+      "accuracy": null,
+      "macro_f1": null,
+      "checklist_f1": null,
+      "mean_uncertainty": 0.0,
+      "misinformation_detection_rate": 0.0,
+      "framing_resistance_rate": 0.0,
+      "source_faithfulness_rate": 0.6,
+      "nei_uncertainty_failure_proxy": 0.4
+    },
+    "attack_aware_cale": {
+      "n": 100,
+      "accuracy": null,
+      "macro_f1": null,
+      "checklist_f1": null,
+      "mean_uncertainty": 0.0,
+      "misinformation_detection_rate": 0.0,
+      "framing_resistance_rate": 0.0,
+      "source_faithfulness_rate": 0.6,
+      "nei_uncertainty_failure_proxy": 0.4
+    },
+    "full_attack_aware_cale": {
+      "n": 100,
+      "accuracy": null,
+      "macro_f1": null,
+      "checklist_f1": null,
+      "mean_uncertainty": 0.047,
+      "misinformation_detection_rate": 0.0,
+      "framing_resistance_rate": 0.0,
+      "source_faithfulness_rate": 0.6,
+      "nei_uncertainty_failure_proxy": 0.4
+    }
+  },
+  "metrics_by_model": {
+    "hand_authored_boundary_target_a": {
+      "generic_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    },
+    "hand_authored_boundary_target_b": {
+      "generic_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 50,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  },
+  "metrics_by_setting": {
+    "internal_constructed_evaluation": {
+      "generic_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  },
+  "metrics_by_dataset": {
+    "BoundaryStress": {
+      "generic_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  },
+  "metrics_by_dataset_role": {
+    "robustness": {
+      "generic_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  },
+  "metrics_by_domain": {
+    "education": {
+      "generic_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    },
+    "health": {
+      "generic_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    },
+    "public_policy": {
+      "generic_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 20,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    },
+    "science": {
+      "generic_cale": {
+        "n": 40,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 40,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 40,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  },
+  "metrics_by_risk_level": {
+    "high": {
+      "generic_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.0,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      },
+      "full_attack_aware_cale": {
+        "n": 100,
+        "accuracy": null,
+        "macro_f1": null,
+        "checklist_f1": null,
+        "mean_uncertainty": 0.047,
+        "misinformation_detection_rate": 0.0,
+        "framing_resistance_rate": 0.0,
+        "source_faithfulness_rate": 0.6,
+        "nei_uncertainty_failure_proxy": 0.4
+      }
+    }
+  }
+}
