@@ -30,8 +30,31 @@ echo "[slurm] Job started at $(date)"
 echo "[slurm] Running on $(hostname)"
 echo "[slurm] CUDA devices: ${CUDA_VISIBLE_DEVICES:-unset}"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate jupyterenv
+PYTHON_BIN="python"
+CONDA_SH=""
+for candidate in \
+  "${HOME}/.conda/etc/profile.d/conda.sh" \
+  "${HOME}/miniconda3/etc/profile.d/conda.sh" \
+  "${HOME}/anaconda3/etc/profile.d/conda.sh" \
+  "/home/kelava/koh927/.conda/etc/profile.d/conda.sh"; do
+  if [[ -f "${candidate}" ]]; then
+    CONDA_SH="${candidate}"
+    break
+  fi
+done
+
+if [[ -n "${CONDA_SH}" ]]; then
+  source "${CONDA_SH}"
+  conda activate jupyterenv
+elif [[ -x "${HOME}/.conda/envs/jupyterenv/bin/python" ]]; then
+  PYTHON_BIN="${HOME}/.conda/envs/jupyterenv/bin/python"
+elif [[ -x "/home/kelava/koh927/.conda/envs/jupyterenv/bin/python" ]]; then
+  PYTHON_BIN="/home/kelava/koh927/.conda/envs/jupyterenv/bin/python"
+else
+  echo "[slurm] WARNING: could not find conda init; falling back to python on PATH." >&2
+fi
+
+echo "[slurm] Python: $(${PYTHON_BIN} -c 'import sys; print(sys.executable)')"
 
 export TOKENIZERS_PARALLELISM=false
 export CALE_JUDGE_MAX_NEW_TOKENS="${CALE_JUDGE_MAX_NEW_TOKENS:-1200}"
@@ -52,7 +75,7 @@ mkdir -p "figures/controlled_framing_n300_${JUDGE_TAG}" "figures/boundary_hard_r
 echo "[slurm] HF judge model: ${JUDGE_MODEL}"
 echo "[slurm] HF judge tag: ${JUDGE_TAG}"
 
-python experiment.py \
+"${PYTHON_BIN}" experiment.py \
   --dataset outputs/subsets/controlled_framing_reuse_response_n300.jsonl \
   --judge hf \
   --model "${JUDGE_MODEL}" \
@@ -64,12 +87,12 @@ python experiment.py \
   --summary-only \
   --pretty
 
-python analyze_controlled_framing.py \
+"${PYTHON_BIN}" analyze_controlled_framing.py \
   --behavior-matrix "outputs/subsets/controlled_framing_reuse_response_n300_${JUDGE_TAG}_behavior_matrix.csv" \
   --manifest outputs/subsets/controlled_framing_reuse_response_n300_manifest.csv \
   --output-dir "figures/controlled_framing_n300_${JUDGE_TAG}"
 
-python experiment.py \
+"${PYTHON_BIN}" experiment.py \
   --dataset outputs/subsets/boundary_hard_real_subset.jsonl \
   --judge hf \
   --model "${JUDGE_MODEL}" \
@@ -81,7 +104,7 @@ python experiment.py \
   --summary-only \
   --pretty
 
-python analyze_boundary_hard_subset.py \
+"${PYTHON_BIN}" analyze_boundary_hard_subset.py \
   --behavior-matrix "outputs/subsets/boundary_hard_real_subset_${JUDGE_TAG}_behavior_matrix.csv" \
   --manifest outputs/subsets/boundary_hard_real_subset_manifest.csv \
   --output-dir "figures/boundary_hard_real_subset_${JUDGE_TAG}"

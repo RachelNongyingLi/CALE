@@ -23,8 +23,31 @@ mkdir -p outputs/slurm outputs/subsets figures/controlled_framing_n300_deepseek 
 echo "[slurm] Job started at $(date)"
 echo "[slurm] Running on $(hostname)"
 
-source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate jupyterenv
+PYTHON_BIN="python"
+CONDA_SH=""
+for candidate in \
+  "${HOME}/.conda/etc/profile.d/conda.sh" \
+  "${HOME}/miniconda3/etc/profile.d/conda.sh" \
+  "${HOME}/anaconda3/etc/profile.d/conda.sh" \
+  "/home/kelava/koh927/.conda/etc/profile.d/conda.sh"; do
+  if [[ -f "${candidate}" ]]; then
+    CONDA_SH="${candidate}"
+    break
+  fi
+done
+
+if [[ -n "${CONDA_SH}" ]]; then
+  source "${CONDA_SH}"
+  conda activate jupyterenv
+elif [[ -x "${HOME}/.conda/envs/jupyterenv/bin/python" ]]; then
+  PYTHON_BIN="${HOME}/.conda/envs/jupyterenv/bin/python"
+elif [[ -x "/home/kelava/koh927/.conda/envs/jupyterenv/bin/python" ]]; then
+  PYTHON_BIN="/home/kelava/koh927/.conda/envs/jupyterenv/bin/python"
+else
+  echo "[slurm] WARNING: could not find conda init; falling back to python on PATH." >&2
+fi
+
+echo "[slurm] Python: $(${PYTHON_BIN} -c 'import sys; print(sys.executable)')"
 
 export TOKENIZERS_PARALLELISM=false
 
@@ -39,7 +62,7 @@ if [[ -n "${CALE_TARGETED_LIMIT:-}" ]]; then
   echo "[slurm] Applying CALE_TARGETED_LIMIT=${CALE_TARGETED_LIMIT}"
 fi
 
-python experiment.py \
+"${PYTHON_BIN}" experiment.py \
   --dataset outputs/subsets/controlled_framing_reuse_response_n300.jsonl \
   --judge deepseek \
   --model deepseek-v4-pro \
@@ -51,12 +74,12 @@ python experiment.py \
   --summary-only \
   --pretty
 
-python analyze_controlled_framing.py \
+"${PYTHON_BIN}" analyze_controlled_framing.py \
   --behavior-matrix outputs/subsets/controlled_framing_reuse_response_n300_deepseek_behavior_matrix.csv \
   --manifest outputs/subsets/controlled_framing_reuse_response_n300_manifest.csv \
   --output-dir figures/controlled_framing_n300_deepseek
 
-python experiment.py \
+"${PYTHON_BIN}" experiment.py \
   --dataset outputs/subsets/boundary_hard_real_subset.jsonl \
   --judge deepseek \
   --model deepseek-v4-pro \
@@ -68,7 +91,7 @@ python experiment.py \
   --summary-only \
   --pretty
 
-python analyze_boundary_hard_subset.py \
+"${PYTHON_BIN}" analyze_boundary_hard_subset.py \
   --behavior-matrix outputs/subsets/boundary_hard_real_subset_deepseek_behavior_matrix.csv \
   --manifest outputs/subsets/boundary_hard_real_subset_manifest.csv \
   --output-dir figures/boundary_hard_real_subset_deepseek
