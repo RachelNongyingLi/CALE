@@ -1,16 +1,18 @@
 #!/bin/bash
 # Run local Hugging Face evaluator judging for targeted validation subsets.
 #
-# Usage on Galvani:
-#   CALE_HF_JUDGE_MODEL="Qwen/Qwen2.5-7B-Instruct" \
-#   CALE_HF_JUDGE_TAG="qwen25_7b" \
-#   sbatch submit_hf_targeted_validation.sbatch
+# This is the generic HF runner. Prefer the fixed wrappers when possible:
+#   submit_qwen25_7b_targeted_validation.sbatch
+#   submit_gemma3_12b_targeted_validation.sbatch
 #
-# Other examples:
-#   CALE_HF_JUDGE_MODEL="Qwen/Qwen3-14B" CALE_HF_JUDGE_TAG="qwen3_14b" sbatch submit_hf_targeted_validation.sbatch
-#   CALE_HF_JUDGE_MODEL="google/gemma-3-12b-it" CALE_HF_JUDGE_TAG="gemma3_12b" sbatch submit_hf_targeted_validation.sbatch
+# Smoke test through a wrapper:
+#   sbatch --export=ALL,CALE_TARGETED_LIMIT=10 submit_qwen25_7b_targeted_validation.sbatch
+#
+# Direct generic usage:
+#   sbatch --export=ALL,CALE_TARGETED_LIMIT=10,CALE_HF_JUDGE_MODEL="Qwen/Qwen2.5-7B-Instruct",CALE_HF_JUDGE_TAG="qwen25_7b" submit_hf_targeted_validation.sbatch
 #
 # Set HF_TOKEN/HUGGINGFACE_HUB_TOKEN in the shell if the model requires access.
+# Do not write tokens into this file.
 
 #SBATCH --job-name=cale-hf-targeted
 #SBATCH --partition=a100-galvani
