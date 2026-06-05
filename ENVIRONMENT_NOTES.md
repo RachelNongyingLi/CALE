@@ -1,46 +1,33 @@
-# CALE Thesis Environment
+# CALE Environment Notes
 
-This project has three dependency layers:
+This project has three dependency layers.
 
-## 1. Minimal local experiment pipeline
+## 1. Minimal Local Experiment Pipeline
 
-These scripts use only the Python standard library:
+The heuristic evaluator path mainly uses the Python standard library:
 
-- `cale_demo.py`
-- `experiment.py`
-- `perturbations.py`
-- `prepare_fever.py`
+- `cale/cale_demo.py`
+- `cale/experiment.py`
+- `cale/perturbations.py`
+- `examples/prepare_fever.py`
 
-If you only want to run the CALE heuristic pipeline, Python itself is enough.
+For small heuristic-only checks, Python itself is usually enough.
 
-## 2. Jupyter and visualization
+## 2. Notebooks and Analysis
 
-These are needed to work comfortably in notebooks and open `visualize_results.ipynb`:
+These packages are useful for the notebooks and analysis scripts:
 
 - `jupyterlab`
 - `notebook`
 - `ipykernel`
 - `pandas`
+- `numpy`
 - `matplotlib`
 
-## 3. Optional model and API backends
-
-These are only needed for specific scripts or modes:
-
-- `openai`
-  - required for `llm_judge.py` when using `--judge openai`
-- `transformers`, `accelerate`
-  - required for `generate_responses.py` when using Hugging Face models
-- `torch`
-  - required for `generate_responses.py` with local model generation
-  - install this separately on the cluster so you can choose the CUDA build that matches the server
-
-## Recommended setup on Galvani
-
-Create the environment:
+Create the conda environment:
 
 ```bash
-conda env create -f "CALE code/environment.yml"
+conda env create -f environment.yml
 conda activate jupyterenv
 ```
 
@@ -50,24 +37,34 @@ Register the notebook kernel:
 python -m ipykernel install --user --name jupyterenv --display-name "Python (jupyterenv)"
 ```
 
-Install PyTorch separately if you want local model generation:
+## 3. Optional Model and API Backends
+
+These packages are only needed for specific scripts or modes:
+
+- `openai`: required for `cale/llm_judge.py` when using `--judge openai`
+- `transformers` and `accelerate`: required for Hugging Face generation or
+  Hugging Face evaluator backends
+- `torch`: required for local model generation; install this separately so the
+  build matches your CPU, CUDA, or MPS environment
+
+Example CUDA install:
 
 ```bash
-python -m pip install torch
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
 ```
 
-If you only need CALE experiments plus notebooks, you can skip PyTorch.
+If you only need existing behavior matrices, notebooks, and heuristic analysis,
+you can skip the PyTorch install.
 
-## FEVER data download
+## FEVER Data Download
 
-This repository includes a helper script that downloads the raw FEVER files and
-optionally prepares CALE-ready JSONL files:
+Download and prepare FEVER resources:
 
 ```bash
-bash "CALE code/download_fever_data.sh"
+bash workflows/download_fever_data.sh
 ```
 
-That script downloads:
+The script downloads:
 
 - `train.jsonl`
 - `shared_task_dev.jsonl`
@@ -78,5 +75,5 @@ into `data/fever/`, then writes prepared files into `data/fever/prepared/`.
 If you only want the raw downloads, use:
 
 ```bash
-bash "CALE code/download_fever_data.sh" --download-only
+bash workflows/download_fever_data.sh --download-only
 ```

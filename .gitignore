@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local environments and dependency caches
+.venv/
+venv/
+env/
+.cale-analysis-venv/
+.pptx_deps/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS/editor noise
+.DS_Store
+*.swp
+*.swo
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Large local/generated artifacts
+data/
+outputs/
+figures/
+server_transfers/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Logs and scheduler outputs
+*.log
+slurm-*.out

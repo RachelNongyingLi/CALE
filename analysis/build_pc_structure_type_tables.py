@@ -25,10 +25,10 @@ import numpy as np
 import pandas as pd
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "figures" / "global_evaluator_audit"
-PAPER_TABLE_DIR = ROOT.parent / "paper writing" / "tables"
-PAPER_FIGURE_DIR = ROOT.parent / "paper writing" / "figures" / "appendix"
+PAPER_TABLE_DIR = ROOT / "figures" / "paper_tables"
+PAPER_FIGURE_DIR = ROOT / "figures" / "paper_appendix"
 
 FAMILY_DEFINITIONS: dict[str, list[str]] = {
     "A evidence/source": ["source_faithfulness", "evidence_grounding"],

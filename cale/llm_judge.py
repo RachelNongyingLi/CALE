@@ -14,18 +14,32 @@ import sys
 from functools import lru_cache
 from typing import Protocol
 
-from cale_demo import (
-    ConstructSchema,
-    DimensionJudgment,
-    Example,
-    HeuristicJudge,
-    JudgeRun,
-    calibrate_score,
-    lexical_overlap,
-    normalize,
-    score_to_label,
-    weighted_score,
-)
+try:
+    from .cale_demo import (
+        ConstructSchema,
+        DimensionJudgment,
+        Example,
+        HeuristicJudge,
+        JudgeRun,
+        calibrate_score,
+        lexical_overlap,
+        normalize,
+        score_to_label,
+        weighted_score,
+    )
+except ImportError:  # pragma: no cover - keeps direct script execution working.
+    from cale_demo import (
+        ConstructSchema,
+        DimensionJudgment,
+        Example,
+        HeuristicJudge,
+        JudgeRun,
+        calibrate_score,
+        lexical_overlap,
+        normalize,
+        score_to_label,
+        weighted_score,
+    )
 
 
 class StructuredJudge(Protocol):
@@ -169,7 +183,7 @@ class OpenAIStructuredJudge:
     """Optional structured LLM judge.
 
     Set OPENAI_API_KEY and install the OpenAI Python package before using:
-    `python experiment.py --judge openai --model <model-name>`.
+    `python -m cale.experiment --judge openai --model <model-name>`.
     """
 
     def __init__(self, model: str, temperature: float = 0.0) -> None:
@@ -210,7 +224,7 @@ class DeepSeekStructuredJudge(OpenAIStructuredJudge):
     """Structured LLM judge using DeepSeek's OpenAI-compatible API.
 
     Set DEEPSEEK_API_KEY before using:
-    `python experiment.py --judge deepseek --model deepseek-v4-pro`.
+    `python -m cale.experiment --judge deepseek --model deepseek-v4-pro`.
     """
 
     def __init__(self, model: str, temperature: float = 0.0) -> None:

@@ -37,19 +37,34 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from cale_demo import (
-    CALEOutput,
-    Example,
-    HeuristicJudge,
-    JudgeRun,
-    build_adversarial_factuality_schema,
-    demo_example,
-    run_cale,
-    score_to_label,
-    to_jsonable,
-)
-from llm_judge import DirectHeuristicJudge, make_direct_judge, make_structured_judge
-from perturbations import generate_perturbations
+try:
+    from .cale_demo import (
+        CALEOutput,
+        Example,
+        HeuristicJudge,
+        JudgeRun,
+        build_adversarial_factuality_schema,
+        demo_example,
+        run_cale,
+        score_to_label,
+        to_jsonable,
+    )
+    from .llm_judge import DirectHeuristicJudge, make_direct_judge, make_structured_judge
+    from .perturbations import generate_perturbations
+except ImportError:  # pragma: no cover - keeps direct script execution working.
+    from cale_demo import (
+        CALEOutput,
+        Example,
+        HeuristicJudge,
+        JudgeRun,
+        build_adversarial_factuality_schema,
+        demo_example,
+        run_cale,
+        score_to_label,
+        to_jsonable,
+    )
+    from llm_judge import DirectHeuristicJudge, make_direct_judge, make_structured_judge
+    from perturbations import generate_perturbations
 
 
 QUALITY_LABELS = ["low_quality", "indeterminate_quality", "partial_quality", "high_quality"]

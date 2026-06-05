@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_ROOT="${CALE_DATA_ROOT:-${PROJECT_ROOT}/data}"
 OUTPUT_DIR="${CALE_OUTPUT_DIR:-${PROJECT_ROOT}/outputs/small_models_all}"
 MODEL_PRESET="${CALE_MODEL_PRESET:-open_small}"
@@ -26,7 +26,7 @@ line() {
 usage() {
   cat <<'USAGE'
 Usage:
-  bash run_small_models_all_datasets.sh
+  bash workflows/run_small_models_all_datasets.sh
 
 Runs the small-model preset over every prepared dataset found under:
   data/*/prepared/*.jsonl
@@ -114,7 +114,7 @@ done < <(collect_datasets)
 if [[ "${#DATASETS[@]}" -eq 0 ]]; then
   printf 'No prepared datasets found under %s\n' "$DATA_ROOT" >&2
   printf 'Expected files like data/fever/prepared/dev_prepared.jsonl.\n' >&2
-  printf 'Run bash download_fever_data.sh first, or set CALE_DATASETS manually.\n' >&2
+  printf 'Run bash workflows/download_fever_data.sh first, or set CALE_DATASETS manually.\n' >&2
   exit 1
 fi
 

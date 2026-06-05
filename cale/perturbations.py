@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from cale_demo import Example
+try:
+    from .cale_demo import Example
+except ImportError:  # pragma: no cover - keeps direct script execution working.
+    from cale_demo import Example
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_DIR="${PROJECT_ROOT}/data/fever"
 PREPARED_DIR="${DATA_DIR}/prepared"
 
@@ -15,6 +15,13 @@ DO_PREPARE=1
 
 status() {
   printf '[fever-data] %s\n' "$1"
+}
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  bash workflows/download_fever_data.sh [--download-only] [--data-dir PATH]
+USAGE
 }
 
 download_if_missing() {
@@ -30,6 +37,10 @@ download_if_missing() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --help|-h)
+      usage
+      exit 0
+      ;;
     --download-only)
       DO_PREPARE=0
       shift
@@ -41,7 +52,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       printf 'Unknown option: %s\n' "$1" >&2
-      printf 'Usage: %s [--download-only] [--data-dir PATH]\n' "$0" >&2
+      usage >&2
       exit 1
       ;;
   esac
@@ -55,13 +66,13 @@ download_if_missing "$WIKI_URL" "${DATA_DIR}/wiki-pages.zip"
 
 if [[ "$DO_PREPARE" -eq 1 ]]; then
   status "Preparing CALE-ready FEVER files"
-  python3 "${SCRIPT_DIR}/prepare_fever.py" \
+  python3 "${PROJECT_ROOT}/examples/prepare_fever.py" \
     --input "${DATA_DIR}/train.jsonl" \
     --output "${PREPARED_DIR}/train_prepared.jsonl" \
     --wiki-source "${DATA_DIR}/wiki-pages.zip" \
     --keep-nei
 
-  python3 "${SCRIPT_DIR}/prepare_fever.py" \
+  python3 "${PROJECT_ROOT}/examples/prepare_fever.py" \
     --input "${DATA_DIR}/shared_task_dev.jsonl" \
     --output "${PREPARED_DIR}/dev_prepared.jsonl" \
     --wiki-source "${DATA_DIR}/wiki-pages.zip" \

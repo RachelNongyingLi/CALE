@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="${SCRIPT_DIR}"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DATASET="${CALE_DATASET:-${PROJECT_ROOT}/data/fever/prepared/dev_prepared.jsonl}"
 OUTPUT_DIR="${CALE_OUTPUT_DIR:-${PROJECT_ROOT}/outputs}"
@@ -61,7 +61,7 @@ status() {
 usage() {
   cat <<'USAGE'
 Usage:
-  bash run_pipeline.sh
+  bash workflows/run_pipeline.sh
 
 Environment overrides:
   CALE_RUN_MODE=smoke|full
@@ -138,7 +138,7 @@ fi
 
 if [[ ! -f "$DATASET" ]]; then
   printf 'Prepared dataset not found: %s\n' "$DATASET" >&2
-  printf 'Run bash download_fever_data.sh or set CALE_DATASET.\n' >&2
+  printf 'Run bash workflows/download_fever_data.sh or set CALE_DATASET.\n' >&2
   exit 1
 fi
 
@@ -183,7 +183,7 @@ if [[ "$MODELS" == *"google/gemma"* && -z "${HF_TOKEN:-}" ]]; then
 fi
 
 GEN_ARGS=(
-  python "${SCRIPT_DIR}/generate_responses.py"
+  python "${PROJECT_ROOT}/cale/generate_responses.py"
   --dataset "$DATASET"
   --models "${MODEL_ARRAY[@]}"
   --output "$RESPONSES_PATH"
@@ -218,7 +218,7 @@ fi
 status "Generated rows: $(wc -l < "$RESPONSES_PATH" | tr -d ' ')"
 
 EXP_ARGS=(
-  python "${SCRIPT_DIR}/experiment.py"
+  python "${PROJECT_ROOT}/cale/experiment.py"
   --dataset "$RESPONSES_PATH"
   --output "$REPORT_PATH"
   --pretty
@@ -250,5 +250,5 @@ printf '  Report JSON:     %s\n' "$REPORT_PATH"
 if [[ "$EXPORT_BEHAVIOR_MATRIX" == "1" ]]; then
   printf '  Behavior CSV:    %s\n' "$BEHAVIOR_MATRIX_PATH"
 fi
-printf '\nUse this in visualize_results.ipynb:\n'
+printf '\nUse this report JSON in notebooks/visualize_current_experiments.ipynb or analysis scripts:\n'
 printf '  RESULTS_PATH = Path("%s")\n' "$REPORT_PATH"

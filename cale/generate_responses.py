@@ -2,13 +2,13 @@
 """Generate candidate responses from open models for CALE experiments.
 
 Example:
-  python generate_responses.py \
+  python -m cale.generate_responses \
     --dataset data/fever/prepared/dev_prepared.jsonl \
     --models Qwen/Qwen2.5-1.5B-Instruct meta-llama/Llama-3.2-1B-Instruct \
     --output outputs/fever_dev_qwen_llama_smoke.jsonl \
     --limit 20
 
-The output JSONL is compatible with `experiment.py --dataset`.
+The output JSONL is compatible with `python -m cale.experiment --dataset`.
 """
 
 from __future__ import annotations
@@ -20,7 +20,10 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from experiment import load_dataset, normalize_item_metadata
+try:
+    from .experiment import load_dataset, normalize_item_metadata
+except ImportError:  # pragma: no cover - keeps direct script execution working.
+    from experiment import load_dataset, normalize_item_metadata
 
 
 PROMPT_TEMPLATES = {
