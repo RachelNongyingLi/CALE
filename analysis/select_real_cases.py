@@ -3,7 +3,7 @@
 
 This script is for qualitative/diagnostic case selection, not for creating a
 new leaderboard. It joins the fixed response JSONL to the global behavior
-matrix using (target_model, id), then exports readable cases and paper-facing
+matrix using (target_model, id), then exports readable cases and diagnostic
 visual checks for:
 
 - NEI boundary-control failures.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create paper-facing visualizations for CALE behavior matrices.
+"""Create publication-style visualizations for CALE behavior matrices.
 
 These plots are designed for the "evaluator as measurement object" story. They
 visualize continuous construct subscores and explicitly named behavior proxies.

@@ -14,7 +14,7 @@ The `hand_authored_boundary_target_a/b` model names are fixture labels used to
 exercise grouping and target-split code paths. They are not real response-
 generating LLMs.
 
-Use the subset only as an internal boundary-control diagnostic: it tests whether
+Use the subset only as a constructed boundary-control diagnostic: it tests whether
 heuristic CALE indicators respond to designed NEI overclaim and boundary-
 respecting response patterns.
 

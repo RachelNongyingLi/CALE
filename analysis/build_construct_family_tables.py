@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build fixed-order construct-family tables for CALE paper figures.
+"""Build fixed-order construct-family tables for CALE figures.
 
 The global audit originally reported "top PC1 variables" as variable-name
-strings. That is useful for exploration, but awkward in the thesis because the
+strings. That is useful for exploration, but awkward for readers because the
 same variables appear in different orders across evaluator backends. This
-script converts the existing paper-ready audit outputs into fixed construct
+script converts the existing audit outputs into fixed construct
 families so readers can compare the same structure across backends and target
 splits.
 

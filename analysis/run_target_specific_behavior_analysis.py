@@ -6,8 +6,8 @@ behavior-profile and PCA summaries within each target model. The goal is to
 check whether the pooled latent structure is stable, or whether it is driven by
 one target model's error distribution.
 
-It does not regenerate model responses and does not require a GPU. Use it after
-`experiment.py` has already exported a behavior matrix CSV.
+Use it after `experiment.py` has already exported a behavior matrix CSV; it does
+not regenerate model responses.
 """
 
 from __future__ import annotations

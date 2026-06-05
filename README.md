@@ -27,7 +27,7 @@ flowchart LR
 CALE/
 ├── README.md                   # Project overview and reproducibility notes
 ├── ENVIRONMENT_NOTES.md         # Dependency-layer notes
-├── environment.yml              # Conda environment, excluding CUDA-specific torch
+├── environment.yml              # Conda environment for the core workflow
 ├── cale/                        # Core CALE pipeline modules
 │   ├── cale_demo.py             # Construct schema, heuristic judge, and scoring
 │   ├── experiment.py            # Run evaluator variants and export behavior matrices
@@ -40,12 +40,12 @@ CALE/
 │   ├── download_fever_data.sh   # Download and prepare FEVER data
 │   ├── run_pipeline.sh          # Smoke/full pipeline wrapper
 │   └── run_small_models_all_datasets.sh
-├── analysis/                    # Behavior-matrix and paper-facing audit scripts
-└── notebooks/                   # Exploratory and paper-facing analysis notebooks
+├── analysis/                    # Behavior-matrix and publication-style audit scripts
+└── notebooks/                   # Exploratory and publication-oriented analysis notebooks
 ```
 
-Generated data, model outputs, behavior matrices, figures, transfer archives,
-local environments, caches, and secrets are intentionally ignored by git.
+Generated data, model outputs, figures, local environments, caches, and secrets
+are intentionally ignored by git.
 
 ## Installation
 
@@ -56,20 +56,10 @@ conda env create -f environment.yml
 conda activate jupyterenv
 ```
 
-Install a PyTorch build that matches your machine only if you need local Hugging
-Face generation or Hugging Face evaluator backends. For example, on a CUDA 12.1
-server:
-
-```bash
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
-
-For CPU-only analysis of existing behavior matrices, the CUDA PyTorch step is
-not required.
-
-Some target or evaluator models are gated. Accept the relevant model license on
-Hugging Face and provide credentials through the shell environment when needed.
-Never commit API keys or Hugging Face tokens.
+The default heuristic evaluator does not require external APIs. Local Hugging
+Face generation and stronger evaluator backends may require additional model
+dependencies and model-access credentials. Never commit API keys or Hugging Face
+tokens.
 
 ## Data
 
@@ -127,9 +117,8 @@ CALE_RUN_MODE=smoke CALE_LIMIT=50 CALE_BATCH_SIZE=4 bash workflows/run_pipeline.
 CALE_RUN_MODE=full CALE_SUMMARY_ONLY=1 bash workflows/run_pipeline.sh
 ```
 
-Response generation is the GPU-heavy stage. Evaluation with the default
-heuristic backend, behavior-matrix export, visualization, and PCA/correlation
-analysis are CPU-friendly.
+The default heuristic evaluator is the lightest way to smoke-test the pipeline.
+Local model generation and stronger evaluator backends are optional extensions.
 
 ## Manual Workflow
 
@@ -213,12 +202,12 @@ python -m cale.experiment \
   --pretty
 ```
 
-For API-based evaluators, provide keys through environment variables or your job
-scheduler's secret mechanism, and keep them out of committed files.
+For API-based evaluators, provide keys through environment variables and keep
+them out of committed files.
 
 ## Analysis Outputs
 
-The main paper-facing analysis flow uses behavior matrices rather than raw
+The main publication-oriented analysis flow uses behavior matrices rather than raw
 response JSONL files.
 
 - `analysis/analyze_behavior_matrix.py`: correlation and PCA summaries.
@@ -239,8 +228,8 @@ response JSONL files.
   boundary-control stress fixture builder.
 - `analysis/build_construct_family_tables.py`,
   `analysis/build_pc_structure_type_tables.py`, and
-  `analysis/rebuild_paper_heatmaps.py`: paper-facing table and heatmap builders.
-- `analysis/plot_style.py`: shared plot styling helper for paper-facing figures.
+  `analysis/rebuild_paper_heatmaps.py`: publication-style table and heatmap builders.
+- `analysis/plot_style.py`: shared plot styling helper for publication-style figures.
 
 Current generated audit artifacts, when present, are usually under:
 
@@ -250,7 +239,7 @@ figures/cfa_behavior_model/
 ```
 
 Those generated directories are ignored by git. Publish large reproducibility
-artifacts through releases, external storage, or a separate data registry.
+artifacts separately when needed.
 
 ## Interpretation Guardrails
 
@@ -289,21 +278,12 @@ If a run is interrupted, the pipeline supports resuming response generation:
 CALE_RESUME=1 bash workflows/run_pipeline.sh
 ```
 
-## What Is Not Versioned
+## Generated Artifacts
 
-The local thesis workspace contains useful generated artifacts and cluster
-handoff files, but most of them should not be committed to this source
-repository:
-
-- `data/`, `outputs/`, `figures/`, and `server_transfers/`
-- response JSONL files, evaluation reports, behavior matrices, and slurm logs
-- virtual environments, notebook checkpoints, caches, transfer archives, and
-  `.DS_Store`
-- cluster-specific handoff notes and unparameterized Slurm scripts with local
-  paths
-
-The repository includes source code and lightweight workflow scripts. Large or
-derived experiment artifacts should be distributed separately.
+This repository is intended to track source code and lightweight workflow
+scripts. Generated datasets, responses, reports, behavior matrices, figures,
+logs, local environments, caches, and secrets are excluded from source control.
+Large or derived experiment artifacts should be distributed separately.
 
 ## License
 

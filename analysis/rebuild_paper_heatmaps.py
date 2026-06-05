@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Rebuild paper-facing CALE heatmaps from saved CSV summaries.
+"""Rebuild publication-style CALE heatmaps from saved CSV summaries.
 
 This script is intentionally layout-only: it does not recompute experiment
-statistics. It restyles existing paper-ready summary tables into consistent,
-print-friendly heatmaps and copies the exported PNGs into a repository-local
-appendix figure directory.
+statistics. It restyles existing publication-ready summary tables into
+consistent, print-friendly heatmaps and copies the exported PNGs into the
+repository's appendix figure directory.
 """
 
 from __future__ import annotations
@@ -222,10 +222,10 @@ def main() -> None:
         rebuild_targeted_controlled_framing(),
         rebuild_targeted_boundary_hard(),
     ]
-    print("Rebuilt paper heatmaps:")
+    print("Rebuilt publication heatmaps:")
     for path in outputs:
         print(f"- {path}")
-    print(f"Copied updated paper PNGs to {PAPER_FIGURE_DIR}")
+    print(f"Copied updated figure PNGs to {PAPER_FIGURE_DIR}")
 
 
 if __name__ == "__main__":

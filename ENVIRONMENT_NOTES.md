@@ -44,17 +44,10 @@ These packages are only needed for specific scripts or modes:
 - `openai`: required for `cale/llm_judge.py` when using `--judge openai`
 - `transformers` and `accelerate`: required for Hugging Face generation or
   Hugging Face evaluator backends
-- `torch`: required for local model generation; install this separately so the
-  build matches your CPU, CUDA, or MPS environment
+- `torch`: required for model generation with local Hugging Face models
 
-Example CUDA install:
-
-```bash
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
-```
-
-If you only need existing behavior matrices, notebooks, and heuristic analysis,
-you can skip the PyTorch install.
+If you only need notebooks, heuristic evaluation, or analysis of existing
+behavior matrices, the optional model-generation dependencies are not required.
 
 ## FEVER Data Download
 

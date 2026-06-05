@@ -1,4 +1,4 @@
-"""Shared paper-facing plotting helpers for CALE figures."""
+"""Shared publication-style plotting helpers for CALE figures."""
 
 from __future__ import annotations
 
