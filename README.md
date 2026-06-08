@@ -1,290 +1,157 @@
 # CALE: Construct-Aware LLM Evaluation
 
-CALE is an experiment pipeline for evaluating how language-model responses
-handle adversarially framed factual claims. Instead of treating evaluation as a
-single final score, CALE exports a behavior matrix: one row per target response,
-evaluator variant, and construct-level signal. That matrix can then be analyzed
-for measurement structure, evaluator-backend agreement, target-model robustness,
-and compact diagnostic summaries.
+CALE is a research pipeline for evaluating how language-model responses handle
+adversarially framed factual claims. Instead of reducing evaluation to one final
+score, CALE exports a behavior matrix: one row per target response, evaluator
+variant, and construct-level signal.
 
-The current implementation is centered on FEVER-style factuality correction, but
-the code separates dataset preparation, target-response generation, evaluator
-backends, and downstream analysis so each stage can be reused independently.
+The current implementation focuses on FEVER-style factuality correction, while
+keeping dataset preparation, target-response generation, evaluator backends, and
+analysis scripts separate enough to reuse independently.
 
 ```mermaid
 flowchart LR
-    A["Prepared factuality dataset"] --> B["Target response generation"]
-    B --> C["Evaluation variants"]
+    A["Prepared dataset"] --> B["Target responses"]
+    B --> C["Evaluator variants"]
     C --> D["Report JSON"]
     C --> E["Behavior matrix CSV"]
-    E --> F["Profiles, PCA, CFA-style analyses"]
-    F --> G["Tables and figures"]
+    E --> F["Profiles, PCA, and validity screening"]
 ```
 
-## Repository Layout
+## What This Repository Contains
 
 ```text
-CALE/
-├── README.md                   # Project overview and reproducibility notes
-├── ENVIRONMENT_NOTES.md         # Dependency-layer notes
-├── environment.yml              # Conda environment for the core workflow
-├── cale/                        # Core CALE pipeline modules
-│   ├── cale_demo.py             # Construct schema, heuristic judge, and scoring
-│   ├── experiment.py            # Run evaluator variants and export behavior matrices
-│   ├── generate_responses.py    # Generate target-model candidate responses
-│   ├── llm_judge.py             # Heuristic, HF, OpenAI, and DeepSeek judge backends
-│   └── perturbations.py         # Stress-test perturbation definitions
-├── examples/
-│   └── prepare_fever.py         # Convert raw FEVER into CALE-ready JSONL
-├── workflows/
-│   ├── download_fever_data.sh   # Download and prepare FEVER data
-│   ├── run_pipeline.sh          # Smoke/full pipeline wrapper
-│   └── run_small_models_all_datasets.sh
-├── analysis/                    # Behavior-matrix and publication-style audit scripts
-└── notebooks/                   # Exploratory and publication-oriented analysis notebooks
+cale/          Core generation, evaluation, judge, and perturbation code
+examples/      Dataset conversion helpers
+workflows/     Shell wrappers for data download and pipeline runs
+analysis/      Behavior-matrix analysis and figure/table builders
+notebooks/     Exploratory and publication-oriented notebooks
 ```
 
-Generated data, model outputs, figures, local environments, caches, and secrets
-are intentionally ignored by git.
+Generated datasets, responses, reports, behavior matrices, figures, logs,
+caches, local environments, and secrets are ignored by git.
 
-## Installation
-
-Create the conda environment:
+## Setup
 
 ```bash
 conda env create -f environment.yml
 conda activate jupyterenv
 ```
 
-The default heuristic evaluator does not require external APIs. Local Hugging
-Face generation and stronger evaluator backends may require additional model
-dependencies and model-access credentials. Never commit API keys or Hugging Face
-tokens.
+For dependency-layer details, see `ENVIRONMENT_NOTES.md`.
+
+The default heuristic evaluator does not need API keys. Local Hugging Face
+generation and stronger evaluator backends may require model access and
+credentials. Keep tokens in the environment, not in committed files.
 
 ## Data
 
-Prepare FEVER dev data from raw FEVER files:
-
-```bash
-python examples/prepare_fever.py \
-  --input data/fever/shared_task_dev.jsonl \
-  --output data/fever/prepared/dev_prepared.jsonl \
-  --wiki-source data/fever/wiki-pages.zip \
-  --keep-nei
-```
-
-Or download and prepare FEVER in one step:
+Download and prepare FEVER data:
 
 ```bash
 bash workflows/download_fever_data.sh
 ```
 
-The expected prepared FEVER dev split has `19,998` rows when NEI items are kept.
+This writes the prepared dev split to:
+
+```text
+data/fever/prepared/dev_prepared.jsonl
+```
+
+With NEI items kept, the prepared FEVER dev split should contain `19,998` rows.
 
 ## Quick Start
 
 Run a small smoke pipeline:
 
 ```bash
-bash workflows/run_pipeline.sh
+CALE_MODEL_PRESET=qwen_only CALE_LIMIT=20 bash workflows/run_pipeline.sh
 ```
 
-The default smoke run uses:
+The workflow will:
+
+1. Generate target-model responses.
+2. Run CALE evaluator variants with the default heuristic judge.
+3. Write a report JSON and behavior-matrix CSV under `outputs/`.
+
+The script prints the exact output paths at the end. For all available runtime
+options:
+
+```bash
+bash workflows/run_pipeline.sh --help
+```
+
+Common overrides:
 
 ```text
-CALE_RUN_MODE=smoke
+CALE_RUN_MODE=smoke|full
 CALE_LIMIT=20
-CALE_MODEL_PRESET=open_small
-CALE_FRAMING=neutral
+CALE_MODEL_PRESET=open_small|open_tiny|open_larger|open_three_family|qwen_only|llama_only
+CALE_BATCH_SIZE=4
+CALE_SUMMARY_ONLY=1
+CALE_RESUME=1
+CALE_SKIP_GENERATION=1
 ```
 
-Useful model presets:
+`open_small` and Llama/Gemma presets may require accepting the model license on
+Hugging Face and setting `HF_TOKEN`.
+
+## Outputs
+
+The main generated files are:
 
 ```text
-open_small        Qwen2.5-1.5B + Llama3.2-1B
-open_tiny         Qwen2.5-0.5B + Llama3.2-1B
-open_larger       Qwen2.5-1.5B + Llama3.2-3B
-open_three_family Qwen2.5-1.5B + Llama3.2-1B + Gemma2-2B
-qwen_only         Qwen2.5-1.5B
-llama_only        Llama3.2-1B
+outputs/<run_tag>.jsonl                    Target-model responses
+outputs/<run_tag>_eval_report.json         Aggregate evaluation report
+outputs/<run_tag>_eval_behavior_matrix.csv Construct-level behavior matrix
 ```
 
-Examples:
+For full FEVER dev runs with two target models, typical row counts are:
+
+```text
+Prepared FEVER dev rows:       19,998
+Two-model response rows:       39,996
+Six-variant behavior rows:    239,976
+```
+
+Large generated artifacts should be distributed separately from the source
+repository.
+
+## Advanced Entry Points
+
+Use the modules directly when you already have a prepared dataset or response
+file:
 
 ```bash
-CALE_MODEL_PRESET=qwen_only bash workflows/run_pipeline.sh
-CALE_RUN_MODE=smoke CALE_LIMIT=50 CALE_BATCH_SIZE=4 bash workflows/run_pipeline.sh
-CALE_RUN_MODE=full CALE_SUMMARY_ONLY=1 bash workflows/run_pipeline.sh
+python -m cale.generate_responses --help
+python -m cale.experiment --help
 ```
 
-The default heuristic evaluator is the lightest way to smoke-test the pipeline.
-Local model generation and stronger evaluator backends are optional extensions.
-
-## Manual Workflow
-
-Generate target responses:
+Use analysis scripts after a behavior matrix exists:
 
 ```bash
-python -m cale.generate_responses \
-  --dataset data/fever/prepared/dev_prepared.jsonl \
-  --models Qwen/Qwen2.5-1.5B-Instruct meta-llama/Llama-3.2-1B-Instruct \
-  --output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl \
-  --limit 20 \
-  --framing neutral \
-  --device-map auto \
-  --batch-size 4
+python analysis/analyze_behavior_matrix.py --help
+python analysis/run_target_specific_behavior_analysis.py --help
+python analysis/measurement_invariance_screening.py --help
 ```
 
-Evaluate those responses and export a behavior matrix:
+The notebooks in `notebooks/` provide more interactive analysis paths for
+behavior matrices, strong-evaluator comparisons, and CFA-style validity checks.
 
-```bash
-python -m cale.experiment \
-  --dataset outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke.jsonl \
-  --output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_eval_report.json \
-  --behavior-matrix-output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_smoke_eval_behavior_matrix.csv \
-  --pretty
-```
+## Interpretation Notes
 
-For large runs, add `--summary-only` so the report omits row-level predictions:
-
-```bash
-python -m cale.experiment \
-  --dataset outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl \
-  --output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_report.json \
-  --behavior-matrix-output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv \
-  --summary-only \
-  --pretty
-```
-
-Run target-specific robustness analysis after a behavior matrix exists:
-
-```bash
-python analysis/run_target_specific_behavior_analysis.py \
-  --input outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full_eval_behavior_matrix.csv \
-  --output-dir figures/behavior_target_specific_neutral_full
-```
-
-## Evaluator Variants and Backends
-
-Keep these layers separate when interpreting results:
+Keep these layers separate when reading results:
 
 - **Target model**: the model that generated `candidate_response`.
-- **Evaluator backend**: the implementation or model that scores responses,
-  selected by `cale.experiment --judge` and `--model`.
-- **Evaluator variant**: the scoring protocol selected by `--variants`.
+- **Evaluator backend**: the judge implementation or model used for scoring.
+- **Evaluator variant**: the scoring protocol, such as a baseline, generic CALE,
+  attack-aware CALE, or full attack-aware CALE.
 
-Common evaluator variants include:
-
-```text
-baseline_binary
-baseline_likert
-direct_trustllm_heuristic
-direct_llm_judge
-generic_cale
-attack_aware_cale
-full_attack_aware_cale
-```
-
-The default `heuristic` backend is rule-based and reproducible. To run a
-stronger Hugging Face evaluator on a small matched subset:
-
-```bash
-python -m cale.experiment \
-  --dataset outputs/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl \
-  --judge hf \
-  --model Qwen/Qwen2.5-7B-Instruct \
-  --variants direct_llm_judge generic_cale attack_aware_cale full_attack_aware_cale \
-  --repeats 1 \
-  --limit 100 \
-  --output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit100_eval_report.json \
-  --behavior-matrix-output outputs/fever_dev_qwen25_15b_llama32_1b_neutral_strong_qwen25_7b_limit100_eval_behavior_matrix.csv \
-  --summary-only \
-  --pretty
-```
-
-For API-based evaluators, provide keys through environment variables and keep
-them out of committed files.
-
-## Analysis Outputs
-
-The main publication-oriented analysis flow uses behavior matrices rather than raw
-response JSONL files.
-
-- `analysis/analyze_behavior_matrix.py`: correlation and PCA summaries.
-- `analysis/visualize_behavior_matrix.py`: behavior profiles, proxy heatmaps,
-  and missingness views.
-- `analysis/run_target_specific_behavior_analysis.py`: pooled, Qwen-only, and
-  Llama-only robustness summaries.
-- `analysis/measurement_invariance_screening.py`: screening checks for backend
-  and target-split stability.
-- `analysis/select_real_cases.py`: qualitative case selection from fixed
-  responses and behavior matrices.
-- `analysis/build_controlled_framing_subset.py` and
-  `analysis/analyze_controlled_framing.py`: framing-sensitivity screening.
-- `analysis/build_boundary_hard_subset.py` and
-  `analysis/analyze_boundary_hard_subset.py`: boundary-control diagnostic
-  subsets.
-- `analysis/build_boundary_control_stress_subset.py`: hand-authored
-  boundary-control stress fixture builder.
-- `analysis/build_construct_family_tables.py`,
-  `analysis/build_pc_structure_type_tables.py`, and
-  `analysis/rebuild_paper_heatmaps.py`: publication-style table and heatmap builders.
-- `analysis/plot_style.py`: shared plot styling helper for publication-style figures.
-
-Current generated audit artifacts, when present, are usually under:
-
-```text
-figures/global_evaluator_audit/
-figures/cfa_behavior_model/
-```
-
-Those generated directories are ignored by git. Publish large reproducibility
-artifacts separately when needed.
-
-## Interpretation Guardrails
-
-CALE is designed for measurement-oriented analysis, not a simple model
-leaderboard. In particular:
-
-- Higher `final_score` is not automatically better measurement quality.
-- Cross-backend absolute means are descriptive unless calibration evidence is
-  available.
-- PCA components are exploratory; component signs are arbitrary and factor names
-  should come from loading patterns.
-- Strong-evaluator subsets should be compared only when target rows and variants
-  are matched.
-- Boundary-control stress fixtures are diagnostic checks, not large-N target
-  model performance evidence.
-- Validity analyses in this repository should be described as screening or
-  preliminary evidence unless supported by a stronger study design.
-
-## Reproducibility Notes
-
-Full target-response generation can be expensive. Before launching a full run,
-check whether a compatible response JSONL already exists and reuse it when the
-dataset, target models, framing, decoding settings, and row count match.
-
-Typical row-count expectations for the FEVER dev setup:
-
-```text
-Prepared FEVER dev rows:        19,998
-Two-model response rows:        39,996
-Six-variant behavior rows:     239,976
-```
-
-If a run is interrupted, the pipeline supports resuming response generation:
-
-```bash
-CALE_RESUME=1 bash workflows/run_pipeline.sh
-```
-
-## Generated Artifacts
-
-This repository is intended to track source code and lightweight workflow
-scripts. Generated datasets, responses, reports, behavior matrices, figures,
-logs, local environments, caches, and secrets are excluded from source control.
-Large or derived experiment artifacts should be distributed separately.
+CALE is intended for measurement-oriented analysis rather than a simple model
+leaderboard. Higher `final_score` is not automatically better measurement
+quality; PCA and validity outputs should be treated as exploratory or screening
+evidence unless a stronger study design supports the claim.
 
 ## License
 
-Add the intended license before publishing this repository publicly.
+No license has been specified yet.
