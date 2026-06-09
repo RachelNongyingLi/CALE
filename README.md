@@ -135,6 +135,17 @@ python analysis/run_target_specific_behavior_analysis.py --help
 python analysis/measurement_invariance_screening.py --help
 ```
 
+Paper-facing audit and diagnostic builders live under `analysis/` as well:
+
+```bash
+python analysis/build_construct_family_tables.py
+python analysis/build_pc_structure_type_tables.py
+python analysis/build_efa_cfa_split_audit.py
+python analysis/build_formula_fit_audit.py --help
+python analysis/build_submission_diagnostics.py
+python analysis/select_real_cases.py --help
+```
+
 The notebooks in `notebooks/` provide more interactive analysis paths for
 behavior matrices, strong-evaluator comparisons, and CFA-style validity checks.
 

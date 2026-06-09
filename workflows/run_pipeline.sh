@@ -2,6 +2,18 @@
 
 set -euo pipefail
 
+# Resource note:
+# - cale/generate_responses.py is the GPU-heavy stage in this pipeline.
+# - cale/experiment.py, behavior-matrix export, visualization, and PCA/correlation
+#   analysis are CPU-friendly and should be run outside an A100 allocation when
+#   possible.
+# - Before launching a full generation run, check whether a reusable response
+#   JSONL already exists. For the neutral FEVER full run, the expected reusable
+#   file is:
+#     outputs/small_models_all/fever_dev_qwen25_15b_llama32_1b_neutral_full.jsonl
+#   with 39,996 rows (= 19,998 FEVER items x 2 target models).
+#   If that file exists, skip generation and run experiment.py directly on it.
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 

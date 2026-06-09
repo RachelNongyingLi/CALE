@@ -5,6 +5,21 @@ The script is intentionally lightweight: it can run with the built-in toy data,
 or with a JSON/JSONL dataset that follows the schema documented in README-style
 comments below.
 
+Naming convention used throughout the analysis:
+  target model: the model that generated `candidate_response`; stored in
+    `model_name` in response/evaluation rows.
+  evaluator backend: the implementation/model that scores the response, chosen
+    by `--judge` and `--model` (for example heuristic/default, Qwen2.5-7B, or
+    DeepSeek V4-Pro).
+  evaluator variant: the evaluation protocol chosen by `--variants` (for
+    example direct_llm_judge, direct_trustllm_heuristic, generic_cale, or
+    full_attack_aware_cale).
+
+Important: the heuristic backend is a rule-based scoring backend, not an
+average of Qwen and Llama target models. It evaluates whatever target responses
+are present in the dataset. If a table pools over Qwen and Llama target rows,
+that pooling happens during analysis, not inside the heuristic judge.
+
 Dataset item fields:
   id: optional string
   dataset: optional string
@@ -455,6 +470,10 @@ def run_baseline(
 def run_variant(item: dict[str, Any], variant: str, judge_kind: str, model: str | None, repeats: int) -> dict[str, Any]:
     if variant.startswith("baseline_"):
         return run_baseline(item, variant.replace("baseline_", "", 1), judge_kind, model, variant)
+    # Heuristic direct baselines intentionally bypass `judge_kind`: they are
+    # rule-based direct baselines for the heuristic/offline condition. They are
+    # not the same implementation as `direct_llm_judge`, which calls the
+    # selected model/API backend through `make_direct_judge`.
     if variant.startswith("direct_") and variant.endswith("_heuristic"):
         mode = variant.removeprefix("direct_").removesuffix("_heuristic")
         return run_baseline(item, mode, "heuristic", model, variant)
@@ -1037,7 +1056,12 @@ def main() -> None:
             "attack_aware_cale",
             "full_attack_aware_cale",
         ],
-        help="Evaluator variants to run.",
+        help=(
+            "Evaluator variants/protocols to run. `direct_trustllm_heuristic` "
+            "is the rule-based direct baseline used with the heuristic backend; "
+            "`direct_llm_judge` is the model/API direct baseline used with hf, "
+            "openai, or deepseek backends."
+        ),
     )
     parser.add_argument("--pretty", action="store_true")
     args = parser.parse_args()

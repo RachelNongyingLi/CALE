@@ -15,9 +15,10 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", str(Path("figures/.matplotlib-cache").resolve()))
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from plot_style import save_paper_heatmap
 
 
 DEFAULT_MATRIX = Path("outputs/subsets/controlled_framing_reuse_response_n300_heuristic_behavior_matrix.csv")
@@ -60,27 +61,21 @@ def normalize_behavior(df: pd.DataFrame) -> pd.DataFrame:
 def save_heatmap(df: pd.DataFrame, path: Path, title: str, cbar_label: str) -> None:
     if df.empty:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig_width = max(8, 1.2 * len(df.columns) + 3)
-    fig_height = max(4, 0.55 * len(df.index) + 2.5)
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
     values = df.astype(float).to_numpy()
-    im = ax.imshow(values, aspect="auto", cmap="coolwarm", vmin=-np.nanmax(np.abs(values)), vmax=np.nanmax(np.abs(values)))
-    ax.set_title(title, fontsize=14, pad=12)
-    ax.set_xticks(range(len(df.columns)))
-    ax.set_xticklabels(df.columns, rotation=35, ha="right")
-    ax.set_yticks(range(len(df.index)))
-    ax.set_yticklabels(df.index)
-    for i in range(values.shape[0]):
-        for j in range(values.shape[1]):
-            value = values[i, j]
-            label = "NA" if np.isnan(value) else f"{value:.3f}"
-            ax.text(j, i, label, ha="center", va="center", fontsize=8)
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label(cbar_label)
-    fig.tight_layout()
-    fig.savefig(path, dpi=220)
-    plt.close(fig)
+    finite = values[np.isfinite(values)]
+    vmax = float(np.nanmax(finite)) if finite.size else 1.0
+    save_paper_heatmap(
+        df,
+        path,
+        title,
+        cbar_label,
+        vmin=0,
+        vmax=vmax,
+        fmt=".3f",
+        pretty_columns=True,
+        pretty_index=True,
+        figsize=(max(8, 1.2 * len(df.columns) + 3), max(4, 0.55 * len(df.index) + 2.5)),
+    )
 
 
 def score_shift_summary(df: pd.DataFrame) -> pd.DataFrame:

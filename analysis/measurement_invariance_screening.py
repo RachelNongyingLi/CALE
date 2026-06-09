@@ -16,9 +16,10 @@ from pathlib import Path
 os.environ.setdefault("MPLCONFIGDIR", str(Path("figures/.matplotlib-cache").resolve()))
 os.environ.setdefault("MPLBACKEND", "Agg")
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from plot_style import save_paper_heatmap
 
 
 DEFAULT_MATRIX = Path("figures/global_evaluator_audit/combined_available_behavior_matrix.csv")
@@ -106,28 +107,18 @@ def congruence(a: np.ndarray, b: np.ndarray) -> float:
 def save_heatmap(df: pd.DataFrame, path: Path, title: str, cbar_label: str, cmap: str = "viridis", vmin=None, vmax=None) -> None:
     if df.empty:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig_width = max(8, 1.2 * len(df.columns) + 3)
-    fig_height = max(4, 0.45 * len(df.index) + 2.5)
-    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-    values = df.astype(float).to_numpy()
-    im = ax.imshow(values, aspect="auto", cmap=cmap, vmin=vmin, vmax=vmax)
-    ax.set_title(title, fontsize=14, pad=12)
-    ax.set_xticks(range(len(df.columns)))
-    ax.set_xticklabels(df.columns, rotation=35, ha="right")
-    ax.set_yticks(range(len(df.index)))
-    ax.set_yticklabels(df.index)
-    threshold = np.nanmax(values) * 0.55 if np.isfinite(values).any() else 0
-    for i in range(values.shape[0]):
-        for j in range(values.shape[1]):
-            value = values[i, j]
-            label = "NA" if np.isnan(value) else f"{value:.2f}"
-            ax.text(j, i, label, ha="center", va="center", fontsize=8, color="white" if value > threshold else "black")
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label(cbar_label)
-    fig.tight_layout()
-    fig.savefig(path, dpi=220)
-    plt.close(fig)
+    save_paper_heatmap(
+        df,
+        path,
+        title,
+        cbar_label,
+        vmin=vmin,
+        vmax=vmax,
+        diverging=(vmin is not None and vmax is not None and vmin < 0 < vmax),
+        pretty_columns=True,
+        pretty_index=True,
+        figsize=(max(8, 1.2 * len(df.columns) + 3), max(4, 0.45 * len(df.index) + 2.5)),
+    )
 
 
 def main() -> None:

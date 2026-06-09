@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create publication-style visualizations for CALE behavior matrices.
+"""Create paper-facing visualizations for CALE behavior matrices.
 
 These plots are designed for the "evaluator as measurement object" story. They
 visualize continuous construct subscores and explicitly named behavior proxies.
@@ -15,6 +15,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from plot_style import save_paper_heatmap
 
 
 CORE_BEHAVIOR_COLUMNS = [
@@ -61,22 +63,18 @@ def save_heatmap(
 ) -> None:
     if table.empty:
         return
-    fig, ax = plt.subplots(figsize=(max(8, 0.65 * len(table.columns)), max(4.8, 0.42 * len(table.index))))
-    image = ax.imshow(table.values, aspect="auto", vmin=vmin, vmax=vmax, cmap=cmap)
-    ax.set_xticks(range(len(table.columns)))
-    ax.set_xticklabels([pretty_label(c) for c in table.columns], rotation=35, ha="right", fontsize=8)
-    ax.set_yticks(range(len(table.index)))
-    ax.set_yticklabels(table.index, fontsize=9)
-    for i in range(table.shape[0]):
-        for j in range(table.shape[1]):
-            value = table.iloc[i, j]
-            if pd.notna(value):
-                ax.text(j, i, f"{value:.2f}", ha="center", va="center", fontsize=7, color="white" if value > 0.62 else "black")
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=240)
-    plt.close(fig)
+    save_paper_heatmap(
+        table,
+        path,
+        title,
+        "mean score",
+        vmin=vmin,
+        vmax=vmax,
+        diverging=(vmin is not None and vmax is not None and vmin < 0 < vmax),
+        pretty_columns=True,
+        figsize=(max(8, 0.65 * len(table.columns)), max(4.8, 0.42 * len(table.index))),
+        xrotation=35,
+    )
 
 
 def save_missingness_plot(df: pd.DataFrame, columns: list[str], path: Path) -> None:

@@ -18,9 +18,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from plot_style import save_paper_heatmap
 
 
 DEFAULT_EXCLUDE_COLUMNS = {
@@ -48,6 +49,9 @@ METADATA_COLUMNS = {
     "domain",
     "risk_level",
     "quality_label",
+    "reference_is_nei",
+    "reference_is_refutes",
+    "reference_is_supports",
 }
 
 
@@ -123,31 +127,36 @@ def run_pca(values: pd.DataFrame, n_components: int, max_missing_share: float) -
 
 
 def save_correlation_heatmap(corr: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(max(7, 0.55 * len(corr.columns)), max(6, 0.55 * len(corr.index))))
-    image = ax.imshow(corr.values, vmin=-1, vmax=1, cmap="RdBu_r", aspect="auto")
-    ax.set_xticks(range(len(corr.columns)))
-    ax.set_xticklabels(corr.columns, rotation=45, ha="right", fontsize=8)
-    ax.set_yticks(range(len(corr.index)))
-    ax.set_yticklabels(corr.index, fontsize=8)
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title("Behavior Variable Correlations")
-    fig.tight_layout()
-    fig.savefig(path, dpi=220)
-    plt.close(fig)
+    save_paper_heatmap(
+        corr,
+        path,
+        "Behavior Variable Correlations",
+        "Pearson r",
+        vmin=-1,
+        vmax=1,
+        diverging=True,
+        annotate=False,
+        pretty_columns=True,
+        pretty_index=True,
+        figsize=(max(7, 0.55 * len(corr.columns)), max(6, 0.55 * len(corr.index))),
+        xrotation=40,
+    )
 
 
 def save_loading_heatmap(loadings: pd.DataFrame, path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(max(5, 1.3 * len(loadings.columns)), max(6, 0.45 * len(loadings.index))))
-    image = ax.imshow(loadings.values, vmin=-1, vmax=1, cmap="RdBu_r", aspect="auto")
-    ax.set_xticks(range(len(loadings.columns)))
-    ax.set_xticklabels(loadings.columns)
-    ax.set_yticks(range(len(loadings.index)))
-    ax.set_yticklabels(loadings.index, fontsize=8)
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title("PCA Loadings")
-    fig.tight_layout()
-    fig.savefig(path, dpi=220)
-    plt.close(fig)
+    save_paper_heatmap(
+        loadings,
+        path,
+        "PCA Loadings",
+        "loading",
+        vmin=-1,
+        vmax=1,
+        diverging=True,
+        annotate=False,
+        pretty_index=True,
+        figsize=(max(5, 1.3 * len(loadings.columns)), max(6, 0.45 * len(loadings.index))),
+        xrotation=0,
+    )
 
 
 def main() -> None:

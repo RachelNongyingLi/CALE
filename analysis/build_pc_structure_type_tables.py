@@ -6,10 +6,17 @@ treats every Full-CALE component (PC1--PC4) from every evaluator backend and
 target split as a component instance, maps its variable loadings into a small
 family coordinate system, and then assigns a descriptive structure type.
 
-The output is a screening taxonomy, not a formal factor solution. The purpose
-is to ask whether similar component structures recur across backends and target
-splits, and whether those recurrent structures can be used as diagnostic lenses
-for target-response profiles.
+The output is a rule-assigned exploratory loading-profile taxonomy, not a
+clustering result, calibrated latent-factor model, or formal factor solution.
+S1--S5 are labels produced by family-share rules over absolute PCA loading
+magnitudes. The thresholds below are descriptive screeners for recurring loading
+profiles, not inferential cutoffs.
+
+Layer 4 profile-expression values are prototype-weighted construct-mean
+summaries. They should not be read as PCA component scores, factor scores, or
+calibrated cross-backend scales. The purpose is to ask whether similar component
+structures recur across backends and target splits, and whether those recurrent
+structures can be used as diagnostic lenses for target-response profiles.
 """
 
 from __future__ import annotations
@@ -21,8 +28,11 @@ os.environ.setdefault("MPLCONFIGDIR", str(Path("figures/.matplotlib-cache").reso
 os.environ.setdefault("MPLBACKEND", "Agg")
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
+
+from plot_style import CATEGORICAL_CMAP, save_paper_heatmap
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +51,10 @@ FAMILY_DEFINITIONS: dict[str, list[str]] = {
     "D boundary": ["hallucination_control", "uncertainty_handling", "uncertainty"],
 }
 
+# Loading taxonomy includes the raw ``uncertainty`` outcome where it is present
+# because PCA loadings are read from the audit loading files. Profile expression
+# below uses construct means, so it keeps ``uncertainty_handling`` but excludes
+# raw ``uncertainty`` from the D-boundary construct summary.
 PROFILE_FAMILY_DEFINITIONS: dict[str, list[str]] = {
     "A evidence/source": ["source_faithfulness", "evidence_grounding"],
     "B status/correction": [
@@ -97,6 +111,19 @@ BACKEND_ORDER = [
 ]
 SPLIT_ORDER = ["Pooled", "Qwen target", "Llama target"]
 PC_ORDER = ["PC1", "PC2", "PC3", "PC4"]
+TYPE_COLORS = {
+    "S1 broad CALE-general": "#69c7b8",
+    "S2 evidence/source": "#ff6f69",
+    "S3 status/correction": "#a6d854",
+    "S4 resistance": "#bc79bd",
+    "S5 boundary": "#f6e75a",
+}
+PC_MARKERS = {
+    "PC1": "o",
+    "PC2": "s",
+    "PC3": "^",
+    "PC4": "D",
+}
 
 
 def _backend_label(value: object) -> str:
@@ -179,6 +206,9 @@ def _classify_structure(weights: dict[str, float]) -> str:
     second_value = ranked[1][1] if len(ranked) > 1 else 0.0
     margin = top_value - second_value
 
+    # S1--S5 are assigned by these family-share rules. They are exploratory
+    # loading-profile labels, not clusters or latent factors.
+    #
     # With four family coordinates, a perfectly broad component has 0.25 in
     # each family. We call a component broad if its largest family share remains
     # close to uniform or if the leading families are nearly tied. These
@@ -312,6 +342,9 @@ def _structure_expression(profile: pd.DataFrame, summary: pd.DataFrame) -> pd.Da
         for structure_type in TYPE_ORDER:
             if structure_type not in prototypes.index:
                 continue
+            # Prototype-weighted construct-mean summary for the target-response
+            # profile. This is not a PCA component score or calibrated
+            # cross-backend scale.
             weights = prototypes.loc[structure_type].astype(float)
             out[structure_type] = float((scores * weights).sum())
         rows.append(out)
@@ -321,35 +354,19 @@ def _structure_expression(profile: pd.DataFrame, summary: pd.DataFrame) -> pd.Da
 def _save_heatmap(df: pd.DataFrame, path: Path, title: str, cbar_label: str, vmin: float = 0.0, vmax: float | None = None) -> None:
     if df.empty:
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
     values = df.to_numpy(dtype=float)
     if vmax is None:
         vmax = float(np.nanmax(values)) if np.isfinite(values).any() else 1.0
-    fig, ax = plt.subplots(figsize=(9.0, max(4.5, 0.42 * len(df.index) + 1.8)))
-    im = ax.imshow(values, aspect="auto", cmap="YlGnBu", vmin=vmin, vmax=vmax)
-    ax.set_title(title, fontsize=13, pad=10)
-    ax.set_xticks(range(len(df.columns)))
-    ax.set_xticklabels(df.columns, rotation=25, ha="right", fontsize=9)
-    ax.set_yticks(range(len(df.index)))
-    ax.set_yticklabels(df.index, fontsize=9)
-    threshold = vmin + (vmax - vmin) * 0.55
-    for i in range(values.shape[0]):
-        for j in range(values.shape[1]):
-            value = values[i, j]
-            ax.text(
-                j,
-                i,
-                "--" if np.isnan(value) else f"{value:.2f}",
-                ha="center",
-                va="center",
-                fontsize=8,
-                color="white" if np.isfinite(value) and value > threshold else "black",
-            )
-    cbar = fig.colorbar(im, ax=ax, shrink=0.9)
-    cbar.set_label(cbar_label)
-    fig.tight_layout()
-    fig.savefig(path, dpi=240)
-    plt.close(fig)
+    save_paper_heatmap(
+        df,
+        path,
+        title,
+        cbar_label,
+        vmin=vmin,
+        vmax=vmax,
+        figsize=(9.0, max(4.5, 0.42 * len(df.index) + 1.8)),
+        xrotation=25,
+    )
 
 
 def _save_occurrence_heatmap(instances: pd.DataFrame) -> pd.DataFrame:
@@ -365,16 +382,8 @@ def _save_occurrence_heatmap(instances: pd.DataFrame) -> pd.DataFrame:
         .reindex(columns=PC_ORDER)
     )
     codes = {structure_type: i + 1 for i, structure_type in enumerate(TYPE_ORDER)}
-    numeric = occurrence.replace(codes).astype(float)
+    numeric = occurrence.map(lambda value: codes.get(str(value), np.nan)).astype(float)
     path = AUDIT / "paper_pc_structure_type_occurrence_heatmap.png"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(7.5, max(4.5, 0.48 * len(numeric.index) + 1.8)))
-    im = ax.imshow(numeric.to_numpy(), aspect="auto", cmap="Set3", vmin=1, vmax=len(codes))
-    ax.set_title("PC-derived structure types across target splits", fontsize=13, pad=10)
-    ax.set_xticks(range(len(numeric.columns)))
-    ax.set_xticklabels(numeric.columns)
-    ax.set_yticks(range(len(numeric.index)))
-    ax.set_yticklabels(numeric.index, fontsize=9)
     short = {
         "S1 broad CALE-general": "S1",
         "S2 evidence/source": "S2",
@@ -382,18 +391,135 @@ def _save_occurrence_heatmap(instances: pd.DataFrame) -> pd.DataFrame:
         "S4 resistance": "S4",
         "S5 boundary": "S5",
     }
-    for i, row in enumerate(occurrence.index):
-        for j, col in enumerate(occurrence.columns):
-            value = occurrence.loc[row, col]
-            ax.text(j, i, short.get(str(value), "--"), ha="center", va="center", fontsize=9)
-    cbar = fig.colorbar(im, ax=ax, shrink=0.85, ticks=list(codes.values()))
-    cbar.ax.set_yticklabels([key.split(" ", 1)[0] for key in codes])
-    cbar.set_label("Structure type")
-    fig.tight_layout()
-    fig.savefig(path, dpi=240)
-    plt.close(fig)
+    annotation_labels = occurrence.copy()
+    for row in occurrence.index:
+        for col in occurrence.columns:
+            annotation_labels.loc[row, col] = short.get(str(occurrence.loc[row, col]), "--")
+    save_paper_heatmap(
+        numeric,
+        path,
+        "PC-derived structure types across target splits",
+        "Structure type",
+        vmin=1,
+        vmax=len(codes),
+        cmap=CATEGORICAL_CMAP,
+        categorical=True,
+        fmt=".0f",
+        figsize=(7.5, max(4.5, 0.48 * len(numeric.index) + 1.8)),
+        xrotation=0,
+        cbar_ticks=list(codes.values()),
+        cbar_ticklabels=[key.split(" ", 1)[0] for key in codes],
+        annotation_labels=annotation_labels,
+    )
     occurrence.to_csv(AUDIT / "paper_pc_structure_type_occurrence.csv")
     return occurrence
+
+
+def _classical_mds(distance: np.ndarray) -> np.ndarray:
+    """Return a deterministic two-dimensional classical MDS embedding."""
+    n = distance.shape[0]
+    if n < 2:
+        return np.zeros((n, 2))
+    squared = distance**2
+    centering = np.eye(n) - np.ones((n, n)) / n
+    gram = -0.5 * centering @ squared @ centering
+    eigvals, eigvecs = np.linalg.eigh(gram)
+    order = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[order]
+    eigvecs = eigvecs[:, order]
+    positive = np.maximum(eigvals[:2], 0)
+    coords = eigvecs[:, :2] * np.sqrt(positive)
+    if coords.shape[1] < 2:
+        coords = np.pad(coords, ((0, 0), (0, 2 - coords.shape[1])))
+    return coords
+
+
+def _save_component_embedding(instances: pd.DataFrame) -> pd.DataFrame:
+    families = list(FAMILY_DEFINITIONS)
+    data = instances[instances["target_paper"].isin(["Qwen target", "Llama target"])].copy()
+    x = data[families].astype(float).to_numpy()
+    norms = np.linalg.norm(x, axis=1, keepdims=True)
+    x_norm = np.divide(x, norms, out=np.zeros_like(x), where=norms > 0)
+    similarity = np.clip(x_norm @ x_norm.T, -1, 1)
+    distance = 1 - similarity
+    coords = _classical_mds(distance)
+    data["mds_x"] = coords[:, 0]
+    data["mds_y"] = coords[:, 1]
+    data["short_label"] = (
+        data["backend_paper"]
+        .replace(
+            {
+                "DeepSeek V4-Pro": "DS",
+                "Gemma3-12B": "Gemma",
+                "Qwen2.5-7B": "Q2.5",
+                "Qwen3-14B": "Q3",
+                "Rule-based heuristic": "Rule",
+            }
+        )
+        + "-"
+        + data["target_paper"].replace({"Qwen target": "Q", "Llama target": "L"})
+        + "-"
+        + data["component"]
+    )
+    data.to_csv(AUDIT / "paper_pc_structure_type_mds_map.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(9.2, 6.8))
+    for structure_type, group in data.groupby("structure_type"):
+        for component, component_group in group.groupby("component"):
+            ax.scatter(
+                component_group["mds_x"],
+                component_group["mds_y"],
+                s=82,
+                marker=PC_MARKERS.get(component, "o"),
+                color=TYPE_COLORS.get(structure_type, "#999999"),
+                edgecolor="black",
+                linewidth=0.6,
+                alpha=0.9,
+            )
+    for _, row in data.iterrows():
+        ax.text(row["mds_x"] + 0.004, row["mds_y"] + 0.004, row["short_label"], fontsize=6.4, alpha=0.78)
+
+    type_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            color="w",
+            markerfacecolor=TYPE_COLORS[structure_type],
+            markeredgecolor="black",
+            label=structure_type.split(" ", 1)[0],
+            markersize=8,
+        )
+        for structure_type in TYPE_ORDER
+        if structure_type in set(data["structure_type"])
+    ]
+    pc_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker=PC_MARKERS[component],
+            color="black",
+            markerfacecolor="white",
+            linestyle="None",
+            label=component,
+            markersize=7,
+        )
+        for component in PC_ORDER
+    ]
+    first = ax.legend(handles=type_handles, title="Structure type", loc="upper left", bbox_to_anchor=(1.02, 1.0))
+    ax.add_artist(first)
+    ax.legend(handles=pc_handles, title="Component", loc="upper left", bbox_to_anchor=(1.02, 0.52))
+    ax.axhline(0, color="#dddddd", linewidth=0.8, zorder=0)
+    ax.axvline(0, color="#dddddd", linewidth=0.8, zorder=0)
+    ax.set_title("Component map from PC loading fingerprints", fontsize=13, pad=10)
+    ax.set_xlabel("MDS dimension 1 (cosine distance on family loading shares)")
+    ax.set_ylabel("MDS dimension 2")
+    ax.grid(True, color="#eeeeee", linewidth=0.7)
+    fig.tight_layout()
+    path = AUDIT / "paper_pc_structure_type_mds_map.png"
+    fig.savefig(path, dpi=240)
+    plt.close(fig)
+    return data
 
 
 def _write_structure_summary_latex(summary: pd.DataFrame, path: Path) -> None:
@@ -459,6 +585,7 @@ def main() -> None:
     summary.to_csv(AUDIT / "paper_pc_structure_type_summary.csv", index=False)
 
     _save_occurrence_heatmap(instances)
+    _save_component_embedding(instances)
 
     families = list(FAMILY_DEFINITIONS)
     proto = summary.set_index("structure_type")[families].reindex(TYPE_ORDER).dropna(how="all")
@@ -490,6 +617,7 @@ def main() -> None:
 
     for name in [
         "paper_pc_structure_type_occurrence_heatmap.png",
+        "paper_pc_structure_type_mds_map.png",
         "paper_pc_structure_type_prototypes_heatmap.png",
         "paper_structure_type_expression_heatmap.png",
     ]:
@@ -503,6 +631,8 @@ def main() -> None:
         "paper_pc_structure_type_summary.csv",
         "paper_pc_structure_type_occurrence.csv",
         "paper_pc_structure_type_occurrence_heatmap.png",
+        "paper_pc_structure_type_mds_map.csv",
+        "paper_pc_structure_type_mds_map.png",
         "paper_pc_structure_type_prototypes_heatmap.png",
         "paper_structure_type_expression_by_backend_target.csv",
         "paper_structure_type_expression_heatmap.png",
